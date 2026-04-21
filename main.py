@@ -14,7 +14,7 @@ from sim.phases.evaporation import MIST_UNIT
 
 
 CONFIG_PATH = "config/default.json"
-N_TICKS     = 1        # set to 1 for phase-by-phase diagnostic
+N_TICKS     = 100        # set to 1 for phase-by-phase diagnostic
 SEED        = 42
 
 
