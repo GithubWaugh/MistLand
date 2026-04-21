@@ -29,12 +29,13 @@ class WorldBuffers:
     albedo:         np.ndarray = field(init=False)  # float32 [0..1]
 
     # --- Atmospheric layer ---
-    pressure:       np.ndarray = field(init=False)  # float32 (bar)
-    mist:           np.ndarray = field(init=False)  # uint8   [0..7]
-    atmo_temp:      np.ndarray = field(init=False)  # float32 (°C)
+    pressure:           np.ndarray = field(init=False)  # float32 (bar)
+    mist:               np.ndarray = field(init=False)  # uint8   [0..7]
+    mist_accumulator:   np.ndarray = field(init=False)  # float32 [0..MIST_UNIT)
+    atmo_temp:          np.ndarray = field(init=False)  # float32 (°C)
 
     # --- Vegetation layer ---
-    vegetation:         np.ndarray = field(init=False)  # uint8 [0..4]
+    vegetation:         np.ndarray = field(init=False)  # uint8  [0..4]
     veg_tick_counter:   np.ndarray = field(init=False)  # uint16 (ticks since last change)
 
     def __post_init__(self):
@@ -47,6 +48,7 @@ class WorldBuffers:
 
         self.pressure           = _zeros(shape, np.float32)
         self.mist               = _zeros(shape, np.uint8)
+        self.mist_accumulator   = _zeros(shape, np.float32)
         self.atmo_temp          = _zeros(shape, np.float32)
 
         self.vegetation         = _zeros(shape, np.uint8)
@@ -59,7 +61,8 @@ class WorldBuffers:
         np.copyto(self.ground_temp,         other.ground_temp)
         np.copyto(self.albedo,              other.albedo)
         np.copyto(self.pressure,            other.pressure)
-        np.copyto(self.mist,               other.mist)
+        np.copyto(self.mist,                other.mist)
+        np.copyto(self.mist_accumulator,    other.mist_accumulator)
         np.copyto(self.atmo_temp,           other.atmo_temp)
         np.copyto(self.vegetation,          other.vegetation)
         np.copyto(self.veg_tick_counter,    other.veg_tick_counter)

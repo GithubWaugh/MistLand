@@ -6,7 +6,7 @@ manages the double buffer, and drives the tick loop.
 
 import numpy as np
 from sim.buffers import WorldBuffers
-
+from sim.phases.evaporation import MIST_UNIT
 
 # Vegetation levels — used as readable constants throughout the codebase
 VEG_NONE    = 0
@@ -120,7 +120,7 @@ class World:
     def total_water(self) -> float:
         """Sum of all water in the world (ground + atmosphere). Should be constant."""
         ground  = float(self.front.ground_water.sum())
-        atmo    = float(self.front.mist.sum())
+        atmo = float(self.front.mist.sum()) * MIST_UNIT + float(self.front.mist_accumulator.sum())
         return ground + atmo
 
     def total_energy(self) -> float:

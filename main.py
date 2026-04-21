@@ -9,6 +9,7 @@ import json
 import time
 import numpy as np
 
+from sim import world
 from sim.world import World
 from sim.generation import generate
 
@@ -61,11 +62,13 @@ def main():
             f"{energy:>12.4f}  "
             f"{energy - energy_0:>+10.6f}  "
             f"{(t1-t0)*1000:>6.1f}ms"
-            f"mean={world.front.pressure.mean():.4f}"
+            f" mean={world.front.pressure.mean():.4f}"
         )
+        print(f"Water baseline : {world.total_water():.6f}")
+
     # ... après N ticks :
     print(f"Energy after {N_TICKS} ticks : {world.total_energy():.6f}")
-
+    print(f"Water after {N_TICKS} ticks : {world.total_water():.6f}")
     print("\nDone.")
 
 
