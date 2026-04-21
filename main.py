@@ -14,7 +14,7 @@ from sim.generation import generate
 
 
 CONFIG_PATH = "config/default.json"
-N_TICKS     = 100       # number of ticks to run in this test
+N_TICKS     = 10       # number of ticks to run in this test
 SEED        = 42       # world generation seed
 
 
@@ -44,6 +44,7 @@ def main():
     energy_0 = world.total_energy()
     print(f"\nBaseline : water={water_0:.4f}  energy={energy_0:.4f}")
     print(f"{'Tick':>6}  {'Water':>12}  {'ΔWater':>10}  {'Energy':>12}  {'ΔEnergy':>10}  {'Time':>8}")
+    print(f"Energy baseline : {world.total_energy():.6f}")
     print("-" * 70)
 
     for _ in range(N_TICKS):
@@ -60,10 +61,10 @@ def main():
             f"{energy:>12.4f}  "
             f"{energy - energy_0:>+10.6f}  "
             f"{(t1-t0)*1000:>6.1f}ms"
-            f"Pressure min={world.front.pressure.min():.4f}  "
-            f"max={world.front.pressure.max():.4f}  "
             f"mean={world.front.pressure.mean():.4f}"
         )
+    # ... après N ticks :
+    print(f"Energy after {N_TICKS} ticks : {world.total_energy():.6f}")
 
     print("\nDone.")
 
