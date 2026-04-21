@@ -129,6 +129,13 @@ def tick(world: World) -> None:
 
 Each phase module exposes a single `step(world)` function. Phases read from `world.back` and write to `world.back` (the front buffer is untouched during computation).
 
+### Tick loop — note on buffer swap
+
+Each phase is followed by swap_buffers() + sync_back_from_front(),
+so that every phase reads a fully consistent and up-to-date world state.
+This ensures inter-phase dependencies are respected within a single tick
+(e.g. evaporation modifies mist before rain reads it).
+
 ---
 
 ## Threading model

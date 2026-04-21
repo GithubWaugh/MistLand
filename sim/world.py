@@ -81,36 +81,21 @@ class World:
     # ------------------------------------------------------------------
 
     def tick(self) -> None:
-        """
-        Execute one simulation tick.
-        Phases are imported here (not at module level) to keep world.py
-        free of circular imports as phase modules grow.
-        """
         from sim.phases import (
-            temperature,
-            pressure,
-            vegetation,
-            nutriments,
-            evaporation,
-            atmosphere,
-            water,
-            rain,
+            temperature, pressure, vegetation, nutriments,
+            evaporation, atmosphere, water, rain,
         )
 
-        # Start each tick with back = copy of front,
-        # so phases can safely read front and write back.
         self.sync_back_from_front()
+        temperature.step(self);  self.swap_buffers(); self.sync_back_from_front()
+        pressure.step(self);     self.swap_buffers(); self.sync_back_from_front()
+        vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        evaporation.step(self);  self.swap_buffers(); self.sync_back_from_front()
+        atmosphere.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        water.step(self);        self.swap_buffers(); self.sync_back_from_front()
+        rain.step(self);         self.swap_buffers()
 
-        temperature.step(self)
-        pressure.step(self)
-        vegetation.step(self)
-        nutriments.step(self)
-        evaporation.step(self)
-        atmosphere.step(self)
-        water.step(self)
-        rain.step(self)
-
-        self.swap_buffers()
         self.tick_count += 1
 
     # ------------------------------------------------------------------
@@ -120,7 +105,8 @@ class World:
     def total_water(self) -> float:
         """Sum of all water in the world (ground + atmosphere). Should be constant."""
         ground  = float(self.front.ground_water.sum())
-        atmo = float(self.front.mist.sum()) * MIST_UNIT + float(self.front.mist_accumulator.sum())
+        atmo    = (float(self.front.mist.sum()) * MIST_UNIT
+                 + float(self.front.mist_accumulator.sum()))
         return ground + atmo
 
     def total_energy(self) -> float:

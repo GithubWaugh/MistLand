@@ -1,22 +1,29 @@
 """
 main.py
 Entry point for MistLand.
-For now : loads config, generates world, runs N ticks in console,
+Loads config, generates world, runs N ticks in console,
 and prints conservation law checks after each tick.
 """
 
 import json
 import time
-import numpy as np
 
-from sim import world
 from sim.world import World
 from sim.generation import generate
+from sim.phases.evaporation import MIST_UNIT
 
 
 CONFIG_PATH = "config/default.json"
-N_TICKS     = 10       # number of ticks to run in this test
-SEED        = 42       # world generation seed
+N_TICKS     = 1        # set to 1 for phase-by-phase diagnostic
+SEED        = 42
+
+
+def total_water(world: World) -> float:
+    return (
+        float(world.front.ground_water.sum())
+        + float(world.front.mist.sum()) * MIST_UNIT
+        + float(world.front.mist_accumulator.sum())
+    )
 
 
 def load_config(path: str) -> dict:
@@ -29,9 +36,9 @@ def main():
     print(f"Loading config from '{CONFIG_PATH}'...")
     config = load_config(CONFIG_PATH)
 
-    w = config["world"]["grid_width"]
-    h = config["world"]["grid_height"]
-    print(f"Creating world ({w} x {h})...")
+    width  = config["world"]["grid_width"]
+    height = config["world"]["grid_height"]
+    print(f"Creating world ({width} x {height})...")
     world = World(config)
 
     print(f"Generating world (seed={SEED})...")
@@ -40,36 +47,20 @@ def main():
     t1 = time.perf_counter()
     print(f"Generation done in {t1 - t0:.3f}s")
 
-    # Baseline conservation check
-    water_0  = world.total_water()
+    water_0  = total_water(world)
     energy_0 = world.total_energy()
-    print(f"\nBaseline : water={water_0:.4f}  energy={energy_0:.4f}")
-    print(f"{'Tick':>6}  {'Water':>12}  {'ΔWater':>10}  {'Energy':>12}  {'ΔEnergy':>10}  {'Time':>8}")
-    print(f"Energy baseline : {world.total_energy():.6f}")
+    print(f"\nBaseline : water={water_0:.6f}  energy={energy_0:.6f}")
     print("-" * 70)
 
     for _ in range(N_TICKS):
-        t0 = time.perf_counter()
+        w_before = total_water(world)
         world.tick()
-        t1 = time.perf_counter()
+        w_after  = total_water(world)
+        delta    = w_after - w_before
+        print(f"Tick {world.tick_count:3d} | ΔWater = {delta:+.6f}")
 
-        water   = world.total_water()
-        energy  = world.total_energy()
-        print(
-            f"{world.tick_count:>6}  "
-            f"{water:>12.4f}  "
-            f"{water  - water_0:>+10.6f}  "
-            f"{energy:>12.4f}  "
-            f"{energy - energy_0:>+10.6f}  "
-            f"{(t1-t0)*1000:>6.1f}ms"
-            f" mean={world.front.pressure.mean():.4f}"
-        )
-        print(f"Water baseline : {world.total_water():.6f}")
-
-    # ... après N ticks :
-    print(f"Energy after {N_TICKS} ticks : {world.total_energy():.6f}")
-    print(f"Water after {N_TICKS} ticks : {world.total_water():.6f}")
-    print("\nDone.")
+    print(f"\nFinal : water={total_water(world):.6f}  energy={world.total_energy():.6f}")
+    print("Done.")
 
 
 if __name__ == "__main__":
