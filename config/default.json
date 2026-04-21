@@ -1,0 +1,64 @@
+{
+  "world": {
+    "grid_width": 128,
+    "grid_height": 64,
+    "total_water": 2.0,
+    "total_energy": 50000
+  },
+
+  "base_types": {
+    "bare": { "thermal_inertia": 0.8, "water_retention": 0.0,  "flooding_threshold": 0.2, "albedo_base": 0.40 },
+    "sand": { "thermal_inertia": 0.3, "water_retention": 0.05, "flooding_threshold": 0.5, "albedo_base": 0.60 },
+    "soil": { "thermal_inertia": 0.5, "water_retention": 0.15, "flooding_threshold": 0.8, "albedo_base": 0.30 }
+  },
+
+  "temperature": {
+    "ground_to_neighbour_rate": 0.05,
+    "ground_to_atmosphere_rate": 0.10,
+    "atmosphere_to_ground_rate": 0.08
+  },
+
+  "atmosphere": {
+    "P_base": 1.0,
+    "k_temp": 0.3,
+    "k_alt": 0.2,
+    "k_wind": 0.5,
+    "pressure_damping": 0.1,
+    "wind_transport_rate": 0.4
+  },
+
+  "water": {
+    "evap_temp_threshold": 25.0,
+    "evap_rate": 0.05,
+    "runoff_rate": 0.3
+  },
+
+  "rain": {
+    "rain_temp_threshold": 5.0,
+    "rain_humidity_threshold": 5,
+    "rain_rate": 0.6
+  },
+
+  "nutriments": {
+    "diffusion_rate": 0.02,
+    "lake_generation_rate": 3,
+    "runoff_transport_rate": 0.1
+  },
+
+  "vegetation": {
+    "growth_period_ticks": 30,
+    "water_min": 0.2,
+    "temp_min": 0.0,
+    "temp_max": 40.0,
+    "nutriments_min": 10,
+    "growth_cost_water": 0.1,
+    "growth_cost_nutriments": 5,
+    "water_stored_per_level": 0.05,
+    "devolution_nutriments_release": 8,
+    "devolution_water_release": 0.05
+  },
+
+  "albedo": {
+    "vegetation_reduction_per_level": 0.05
+  }
+}
