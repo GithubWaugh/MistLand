@@ -3,3 +3,4 @@ moderngl==5.12.0
 numpy==2.4.4
 opensimplex==0.4.5.1
 pygame==2.6.1
+scipy==1.17.1
