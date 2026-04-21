@@ -14,7 +14,7 @@ from sim.phases.evaporation import MIST_UNIT
 
 
 CONFIG_PATH = "config/default.json"
-N_TICKS     = 100        # set to 1 for phase-by-phase diagnostic
+N_TICKS     = 10        # set to 1 for phase-by-phase diagnostic
 SEED        = 42
 
 
@@ -29,6 +29,13 @@ def total_water(world: World) -> float:
 def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+    
+def water_detail(world):
+    gw   = float(world.front.ground_water.sum())
+    mist = float(world.front.mist.sum()) * MIST_UNIT
+    macc = float(world.front.mist_accumulator.sum())
+    vegw = float(world.front.vegetation_water.sum())
+    return gw, mist, macc, vegw
 
 
 def main():
@@ -58,6 +65,8 @@ def main():
         w_after  = total_water(world)
         delta    = w_after - w_before
         print(f"Tick {world.tick_count:3d} | ΔWater = {delta:+.6f}")
+        gw, mist, macc, vegw = water_detail(world)
+        print(f"Tick {world.tick_count:3d} | gw={gw:.2f}  mist={mist:.2f}  macc={macc:.2f}  vegw={vegw:.2f}  total={gw+mist+macc+vegw:.2f}")
 
     print(f"\nFinal : water={total_water(world):.6f}  energy={world.total_energy():.6f}")
     print("Done.")

@@ -103,11 +103,11 @@ class World:
     # ------------------------------------------------------------------
 
     def total_water(self) -> float:
-        """Sum of all water in the world (ground + atmosphere). Should be constant."""
         ground  = float(self.front.ground_water.sum())
         atmo    = (float(self.front.mist.sum()) * MIST_UNIT
-                 + float(self.front.mist_accumulator.sum()))
-        return ground + atmo
+                + float(self.front.mist_accumulator.sum()))
+        veg     = float(self.front.vegetation_water.sum())
+        return ground + atmo + veg
 
     def total_energy(self) -> float:
         """Sum of all temperatures in the world. Should be approximately constant."""
