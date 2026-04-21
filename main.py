@@ -7,13 +7,14 @@ and prints conservation law checks after each tick.
 
 import json
 import time
+import numpy as np
 
 from sim.world import World
 from sim.generation import generate
 
 
 CONFIG_PATH = "config/default.json"
-N_TICKS     = 10       # number of ticks to run in this test
+N_TICKS     = 100       # number of ticks to run in this test
 SEED        = 42       # world generation seed
 
 
@@ -59,6 +60,9 @@ def main():
             f"{energy:>12.4f}  "
             f"{energy - energy_0:>+10.6f}  "
             f"{(t1-t0)*1000:>6.1f}ms"
+            f"Pressure min={world.front.pressure.min():.4f}  "
+            f"max={world.front.pressure.max():.4f}  "
+            f"mean={world.front.pressure.mean():.4f}"
         )
 
     print("\nDone.")

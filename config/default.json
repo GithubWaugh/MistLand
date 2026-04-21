@@ -20,8 +20,9 @@
 
   "atmosphere": {
     "P_base": 1.0,
-    "k_temp": 0.3,
-    "k_alt": 0.2,
+    "k_temp": 0.01,
+    "k_alt": 0.05,
+    "temp_ref": 15.0,
     "k_wind": 0.5,
     "pressure_damping": 0.1,
     "wind_transport_rate": 0.4

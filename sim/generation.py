@@ -147,9 +147,10 @@ def _distribute_temperature(world: World) -> None:
     k_temp  = cfg["k_temp"]
     k_alt   = cfg["k_alt"]
 
+    temp_ref = cfg["temp_ref"]
     world.front.pressure = (
         P_base
-        - k_temp * atmo_temp
+        - k_temp * (atmo_temp - temp_ref)
         + k_alt  * alt
     ).astype(np.float32)
 
