@@ -1,0 +1,17 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# VSCode
+.vscode/
+
+# Saves (optionnel - à retirer si tu veux versionner tes sauvegardes)
+data/saves/
+
+# OS
+.DS_Store
+Thumbs.db
