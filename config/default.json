@@ -1,7 +1,7 @@
 {
   "world": {
-    "grid_width": 128,
-    "grid_height": 64,
+    "grid_width": 1024,
+    "grid_height": 512,
     "total_water": 2.0,
     "total_energy": 50000
   },
@@ -47,13 +47,13 @@
   },
 
   "vegetation": {
-    "growth_period_ticks": 10,
-    "water_min": 0.2,
+    "growth_period_ticks": 60,
+    "water_min": 0.05,
     "temp_min": 0.0,
     "temp_max": 40.0,
     "nutriments_min": 10,
     "growth_cost_water": 0.1,
-    "growth_cost_nutriments": 5,
+    "growth_cost_nutriments": 10,
     "water_stored_per_level": 0.05,
     "devolution_nutriments_release": 8,
     "devolution_water_release": 0.05

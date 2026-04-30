@@ -1,28 +1,29 @@
 """
 generation.py
-Generates the initial world state :
-  - altitude via 2D simplex noise + gaussian blur
-  - base_type derived from altitude
-  - initial water distribution
-  - initial temperature distribution
+Generates the initial world state.
+
+Altitude is generated via a pure numpy tileable value noise
+with multiple octaves. No external noise library required.
 """
 
 import numpy as np
 from scipy.ndimage import gaussian_filter
-from opensimplex import OpenSimplex
 
 from sim.world import World, BASE_BARE, BASE_SAND, BASE_SOIL
 
 
-def generate(world: World, seed: int = 42) -> None:
-    """
-    Populate world.altitude, world.base_type, and world.front
-    with an initial plausible state. Modifies world in-place.
+OCTAVES = [
+    (1.000, 1.0),
+    (0.500, 2.0),
+    (0.250, 4.0),
+    (0.125, 8.0),
+    (0.063, 16.0),
+]
 
-    Args:
-        world : the World instance to populate
-        seed  : random seed for reproducible generation
-    """
+BLUR_SIGMA = 1.5
+
+
+def generate(world: World, seed: int = 42) -> None:
     _generate_altitude(world, seed)
     _generate_base_type(world)
     _distribute_water(world)
@@ -31,43 +32,70 @@ def generate(world: World, seed: int = 42) -> None:
 
 
 # ------------------------------------------------------------------
-# Altitude
+# Pure numpy tileable value noise
 # ------------------------------------------------------------------
 
+def _hash2(ix: np.ndarray, iy: np.ndarray, seed: int) -> np.ndarray:
+    """
+    Fast integer hash for 2D lattice points.
+    All arithmetic done in uint32 to avoid overflow.
+    Returns float64 in [-1, 1].
+    """
+    # Cast to uint32 before any arithmetic
+    ix = ix.astype(np.uint32)
+    iy = iy.astype(np.uint32)
+    s  = np.uint32(seed & 0xFFFFFFFF)
+
+    h = ix * np.uint32(1619) + iy * np.uint32(31337) + s * np.uint32(1013)
+    h = ((h >> np.uint32(13)) ^ h)
+    h = h * (h * h * np.uint32(15731) + np.uint32(789221)) + np.uint32(1376312589)
+
+    return (h.astype(np.float64) / np.float64(0xFFFFFFFF)) * 2.0 - 1.0
+
+
+def _value_noise_2d(h: int, w: int, freq: float, seed: int) -> np.ndarray:
+    """
+    Tileable 2D value noise on a (h, w) grid.
+    Seamlessly tiles on both axes via modular lattice coordinates.
+    """
+    xs = np.linspace(0.0, freq, w, endpoint=False, dtype=np.float64)
+    ys = np.linspace(0.0, freq, h, endpoint=False, dtype=np.float64)
+    xg, yg = np.meshgrid(xs, ys)
+
+    period = int(np.ceil(freq)) + 1
+
+    x0 = np.floor(xg).astype(np.int32) % period
+    y0 = np.floor(yg).astype(np.int32) % period
+    x1 = (x0 + 1) % period
+    y1 = (y0 + 1) % period
+
+    fx = xg - np.floor(xg)
+    fy = yg - np.floor(yg)
+
+    # Smoothstep
+    ux = fx * fx * (3.0 - 2.0 * fx)
+    uy = fy * fy * (3.0 - 2.0 * fy)
+
+    v00 = _hash2(x0, y0, seed)
+    v10 = _hash2(x1, y0, seed)
+    v01 = _hash2(x0, y1, seed)
+    v11 = _hash2(x1, y1, seed)
+
+    return (v00 * (1 - ux) * (1 - uy)
+          + v10 *      ux  * (1 - uy)
+          + v01 * (1 - ux) *      uy
+          + v11 *      ux  *      uy)
+
+
 def _generate_altitude(world: World, seed: int) -> None:
-    """
-    Fill world.altitude with layered simplex noise + gaussian blur.
-    Result is normalized to [0, 1].
-    """
-    gen     = OpenSimplex(seed)
-    h, w    = world.height, world.width
-    alt     = np.zeros((h, w), dtype=np.float32)
+    h, w = world.height, world.width
+    alt  = np.zeros((h, w), dtype=np.float64)
 
-    # Layer several octaves of noise for more natural terrain
-    octaves = [
-        (1.0,  1.0 / max(h, w)),   # large features
-        (0.5,  2.0 / max(h, w)),   # medium features
-        (0.25, 4.0 / max(h, w)),   # small details
-    ]
+    for i, (amplitude, freq_mult) in enumerate(OCTAVES):
+        layer = _value_noise_2d(h, w, freq_mult, seed + i * 7919)
+        alt  += amplitude * layer
 
-    for amplitude, frequency in octaves:
-        for y in range(h):
-            for x in range(w):
-                # Wrap coordinates on a torus :
-                # map (x, y) to a point on the surface of a 4D torus
-                # so that simplex noise wraps seamlessly on both axes.
-                u = x / w
-                v = y / h
-                nx = np.cos(2 * np.pi * u)
-                ny = np.sin(2 * np.pi * u)
-                nz = np.cos(2 * np.pi * v)
-                nw = np.sin(2 * np.pi * v)
-                alt[y, x] += amplitude * gen.noise4(nx, ny, nz, nw)
-
-    # Gaussian blur to smooth ridges
-    alt = gaussian_filter(alt, sigma=2.0)
-
-    # Normalize to [0, 1]
+    alt = gaussian_filter(alt, sigma=BLUR_SIGMA)
     alt -= alt.min()
     alt /= alt.max()
 
@@ -79,19 +107,10 @@ def _generate_altitude(world: World, seed: int) -> None:
 # ------------------------------------------------------------------
 
 def _generate_base_type(world: World) -> None:
-    """
-    Assign base type from altitude thresholds.
-    Low altitudes → bare (future lake beds)
-    Mid altitudes → sand
-    High altitudes → soil (richer ground, more complex terrain)
-    Thresholds are simple starting points, to be tuned in config later.
-    """
     alt = world.altitude
     bt  = np.zeros_like(alt, dtype=np.uint8)
-
-    bt[alt >= 0.3]  = BASE_SAND
-    bt[alt >= 0.6]  = BASE_SOIL
-
+    bt[alt >= 0.3] = BASE_SAND
+    bt[alt >= 0.6] = BASE_SOIL
     world.base_type = bt
 
 
@@ -100,24 +119,15 @@ def _generate_base_type(world: World) -> None:
 # ------------------------------------------------------------------
 
 def _distribute_water(world: World) -> None:
-    """
-    Distribute initial water across cells.
-    Total water = total_water (from config) spread across all cells,
-    weighted inversely by altitude (low areas get more water).
-    """
     total   = world.config["world"]["total_water"]
     h, w    = world.height, world.width
     n_cells = h * w
 
-    # Weight : more water in low areas
-    weight  = 1.0 - world.altitude           # [0..1], high altitude → low weight
-    weight  = np.clip(weight, 0.01, None)    # avoid zeros
-    weight /= weight.sum()                   # normalize to sum = 1
+    weight  = 1.0 - world.altitude
+    weight  = np.clip(weight, 0.01, None)
+    weight /= weight.sum()
 
-    # Distribute total water proportionally
     gw = (weight * total * n_cells).astype(np.float32)
-    gw = np.clip(gw, 0.0, 1.0)
-
     world.front.ground_water = gw
 
 
@@ -126,28 +136,22 @@ def _distribute_water(world: World) -> None:
 # ------------------------------------------------------------------
 
 def _distribute_temperature(world: World) -> None:
-    """
-    Set initial ground and atmospheric temperatures.
-    Simple gradient : warmer at low altitude, cooler at high altitude.
-    Values in Celsius.
-    """
-    alt         = world.altitude
-    temp_min    = 0.0    # °C at highest point
-    temp_max    = 30.0   # °C at lowest point
+    alt      = world.altitude
+    cfg      = world.config["atmosphere"]
+    temp_min = 0.0
+    temp_max = 30.0
 
     ground_temp = (temp_max - (temp_max - temp_min) * alt).astype(np.float32)
-    atmo_temp   = (ground_temp - 5.0).astype(np.float32)  # atmosphere slightly cooler
+    atmo_temp   = (ground_temp - 5.0).astype(np.float32)
 
     world.front.ground_temp = ground_temp
     world.front.atmo_temp   = atmo_temp
 
-    # Initialize pressure from temperature and altitude (same formula as pressure.py)
-    cfg     = world.config["atmosphere"]
-    P_base  = cfg["P_base"]
-    k_temp  = cfg["k_temp"]
-    k_alt   = cfg["k_alt"]
-
+    P_base   = cfg["P_base"]
+    k_temp   = cfg["k_temp"]
+    k_alt    = cfg["k_alt"]
     temp_ref = cfg["temp_ref"]
+
     world.front.pressure = (
         P_base
         - k_temp * (atmo_temp - temp_ref)
@@ -160,16 +164,10 @@ def _distribute_temperature(world: World) -> None:
 # ------------------------------------------------------------------
 
 def _update_albedo(world: World) -> None:
-    """
-    Set initial albedo from base type.
-    Vegetation albedo reduction is 0 at generation (no vegetation yet).
-    """
-    cfg     = world.config["base_types"]
-    bt      = world.base_type
-    albedo  = np.zeros((world.height, world.width), dtype=np.float32)
-
+    cfg    = world.config["base_types"]
+    bt     = world.base_type
+    albedo = np.zeros((world.height, world.width), dtype=np.float32)
     albedo[bt == 0] = cfg["bare"]["albedo_base"]
     albedo[bt == 1] = cfg["sand"]["albedo_base"]
     albedo[bt == 2] = cfg["soil"]["albedo_base"]
-
     world.front.albedo = albedo
