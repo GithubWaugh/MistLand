@@ -63,7 +63,7 @@ def step(world: "World") -> None:
         d = alt - np.roll(alt, shift, axis=axis)
         deltas.append(np.maximum(d, 0.0).astype(np.float32))
 
-    total_delta = sum(deltas).astype(np.float32)
+    total_delta = np.add.reduce(deltas).astype(np.float32)
 
     # --- Water available for runoff (above retention minimum) ---
     available = np.maximum(f.ground_water - retention, 0.0).astype(np.float32)

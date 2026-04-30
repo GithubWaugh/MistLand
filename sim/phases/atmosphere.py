@@ -54,17 +54,20 @@ def step(world: "World") -> None:
         wind.append(np.clip(w, 0.0, 1.0).astype(np.float32))
 
     # Total outgoing wind (sum over all neighbours)
-    total_wind = sum(wind).astype(np.float32)
+    total_wind_raw = np.add.reduce(wind).astype(np.float32)
 
     # Clamp total to 1.0 : a cell cannot send more than 100% of its content
-    total_wind = np.minimum(total_wind, 1.0)
+    total_wind = np.minimum(total_wind_raw, 1.0)
 
     # --- Fraction of content going to each neighbour ---
+    # Normalize by the pre-clamp sum so fractions always sum to 1.0,
+    # even when total_wind_raw > 1.0.  Using total_wind here would make
+    # fractions sum to total_wind_raw, creating energy/mist out of nothing.
     fractions = []
     for w in wind:
         frac = np.where(
-            total_wind > 0.0,
-            w / (total_wind + 1e-8),
+            total_wind_raw > 0.0,
+            w / (total_wind_raw + 1e-8),
             0.0
         ).astype(np.float32)
         fractions.append(frac)
