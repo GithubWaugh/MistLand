@@ -1,7 +1,7 @@
 {
   "world": {
-    "grid_width": 1024,
-    "grid_height": 512,
+    "grid_width": 512,
+    "grid_height": 256,
     "total_water": 2.0,
     "total_energy": 50000
   },
@@ -48,7 +48,7 @@
 
   "vegetation": {
     "growth_period_ticks": 60,
-    "water_min": 0.05,
+    "water_min": 0.04,
     "temp_min": 0.0,
     "temp_max": 40.0,
     "nutriments_min": 10,
