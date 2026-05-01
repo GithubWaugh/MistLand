@@ -130,9 +130,6 @@ def step(world: "World") -> None:
             0, 255
         ).astype(np.uint8)
 
-    negative = np.minimum(new_ground_water, 0.0)
-    if negative.sum() < -0.01:
-        print(f"  water.py : negative gw sum = {negative.sum():.4f}")
     new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
 
     # Force conservation : redistribuer l'écart dû aux arrondis

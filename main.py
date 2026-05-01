@@ -102,9 +102,6 @@ def main():
         print(f"Final : water={total_water(world):.4f}  energy={world.total_energy():.4f}")
         print("Done.")
     
-    #print(f"Total atmo  : {world._diag_atmo:+.3f}")
-    #print(f"Total water : {world._diag_water:+.3f}")
-    #print(f"Total rain  : {world._diag_rain:+.3f}")
 
 
 if __name__ == "__main__":

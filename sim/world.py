@@ -20,17 +20,7 @@ BASE_BARE   = 0
 BASE_SAND   = 1
 BASE_SOIL   = 2
 
-# Set to True to enable per-phase water diagnostic
-WATER_DEBUG = True
-
-
-def _w(buf: WorldBuffers) -> float:
-    """Total water in a buffer."""
-    return (
-        float(buf.ground_water.sum())
-        + float(buf.mist.sum()) * MIST_UNIT
-        + float(buf.vegetation_water.sum())
-    )
+WATER_DEBUG = False
 
 
 class World:
@@ -44,15 +34,27 @@ class World:
 
         shape = (self.height, self.width)
 
-        self.altitude  = np.zeros(shape, dtype=np.float32)
-        self.base_type = np.zeros(shape, dtype=np.uint8)
+        # --- Static arrays ---
+        self.altitude   = np.zeros(shape, dtype=np.float32)
+        self.base_type  = np.zeros(shape, dtype=np.uint8)
 
+        # Fertility : static float32 [-1..1]
+        # Positive = locally favourable to life
+        # Negative = locally hostile
+        # Generated in generation.py, varies by base type :
+        #   bare → high-frequency noise (strong local contrast)
+        #   sand → mid-frequency noise  (medium patches)
+        #   soil → low-frequency noise  (large fertile zones)
+        self.fertility  = np.zeros(shape, dtype=np.float32)
+
+        # UV coordinates
         self.uv = np.zeros((self.height, self.width, 2), dtype=np.float32)
         xs = np.linspace(0.0, 1.0, self.width,  endpoint=False, dtype=np.float32)
         ys = np.linspace(0.0, 1.0, self.height, endpoint=False, dtype=np.float32)
         self.uv[:, :, 0] = xs[np.newaxis, :]
         self.uv[:, :, 1] = ys[:, np.newaxis]
 
+        # Double buffer
         self.front = WorldBuffers(self.height, self.width)
         self.back  = WorldBuffers(self.height, self.width)
 
@@ -69,22 +71,10 @@ class World:
         )
 
         self.sync_back_from_front()
-        w0 = _w(self.front) if WATER_DEBUG else 0.0
 
         temperature.step(self);  self.swap_buffers(); self.sync_back_from_front()
         pressure.step(self);     self.swap_buffers(); self.sync_back_from_front()
-
-        # --- Vegetation with detailed diagnostic ---
-        w_before_veg = _w(self.front) if WATER_DEBUG else 0.0
         vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
-        if WATER_DEBUG:
-            delta_veg = _w(self.front) - w_before_veg
-            if abs(delta_veg) > 0.1:
-                print(f"  T{self.tick_count:5d} vegetation : {delta_veg:+.4f}  "
-                      f"gw={self.front.ground_water.sum():.2f}  "
-                      f"mist={self.front.mist.sum()*MIST_UNIT:.2f}  "
-                      f"vegw={self.front.vegetation_water.sum():.2f}")
-
         nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
         evaporation.step(self);  self.swap_buffers(); self.sync_back_from_front()
         atmosphere.step(self);   self.swap_buffers(); self.sync_back_from_front()

@@ -2,12 +2,12 @@
 generation.py
 Generates the initial world state.
 
-Altitude is generated via pure numpy tileable value noise.
-Temperature has a latitudinal gradient using cos(π·v) :
-  - v=0 (north) : warm
-  - v=0.5       : cold
-  - v=1 (south) : warm again (seamless on the torus)
-This creates a persistent pressure gradient that drives wind circulation.
+Altitude : pure numpy tileable value noise, 5 octaves.
+Fertility : static noise field [-1..1], frequency varies by base type :
+  - bare → high frequency (strong local contrast, rocky patchwork)
+  - sand → medium frequency (larger patches)
+  - soil → low frequency (broad fertile / hostile zones)
+Temperature : latitudinal gradient via cos(π·v).
 """
 
 import numpy as np
@@ -26,10 +26,19 @@ OCTAVES = [
 
 BLUR_SIGMA = 1.5
 
+# Fertility noise parameters per base type
+# (frequency_multiplier, blur_sigma)
+FERTILITY_PARAMS = {
+    BASE_BARE : (16.0, 0.5),   # high freq, sharp contrast
+    BASE_SAND : (6.0,  1.5),   # medium freq, moderate patches
+    BASE_SOIL : (2.0,  3.0),   # low freq, broad zones
+}
+
 
 def generate(world: World, seed: int = 42) -> None:
     _generate_altitude(world, seed)
     _generate_base_type(world)
+    _generate_fertility(world, seed)
     _distribute_water(world)
     _distribute_temperature(world)
     _update_albedo(world)
@@ -77,6 +86,10 @@ def _value_noise_2d(h: int, w: int, freq: float, seed: int) -> np.ndarray:
           + v11 *      ux  *      uy)
 
 
+# ------------------------------------------------------------------
+# Altitude
+# ------------------------------------------------------------------
+
 def _generate_altitude(world: World, seed: int) -> None:
     h, w = world.height, world.width
     alt  = np.zeros((h, w), dtype=np.float64)
@@ -102,6 +115,44 @@ def _generate_base_type(world: World) -> None:
 
 
 # ------------------------------------------------------------------
+# Fertility
+# ------------------------------------------------------------------
+
+def _generate_fertility(world: World, seed: int) -> None:
+    """
+    Generate a static fertility field [-1..1] per cell.
+    Each base type uses a different noise frequency and blur :
+      - bare : high frequency → sharp rocky patchwork
+      - sand : medium frequency → dune-like patches
+      - soil : low frequency → broad fertile / barren zones
+    The final field is a weighted blend — each cell uses only
+    the noise layer matching its base type.
+    """
+    h, w   = world.height, world.width
+    bt     = world.base_type
+    result = np.zeros((h, w), dtype=np.float32)
+
+    # Use a seed offset far from altitude seeds to avoid correlation
+    fertility_seed = seed + 99991
+
+    for base_val, (freq, blur) in FERTILITY_PARAMS.items():
+        # Generate noise layer for this base type
+        layer = _value_noise_2d(h, w, freq, fertility_seed + base_val * 3571)
+        layer = gaussian_filter(layer, sigma=blur)
+
+        # Normalise to [-1, 1]
+        mn, mx = layer.min(), layer.max()
+        if mx - mn > 1e-6:
+            layer = (layer - mn) / (mx - mn) * 2.0 - 1.0
+
+        # Apply only to cells of matching base type
+        mask = (bt == base_val)
+        result[mask] = layer[mask].astype(np.float32)
+
+    world.fertility = result
+
+
+# ------------------------------------------------------------------
 # Water
 # ------------------------------------------------------------------
 
@@ -116,25 +167,20 @@ def _distribute_water(world: World) -> None:
 
 
 # ------------------------------------------------------------------
-# Temperature — latitudinal gradient + altitude correction
+# Temperature
 # ------------------------------------------------------------------
 
 def _distribute_temperature(world: World) -> None:
     alt = world.altitude
     cfg = world.config["atmosphere"]
 
-    # Latitudinal gradient using v coordinate
-    # cos(π·v) : v=0 → +1 (warm), v=0.5 → -1 (cold), v=1 → +1 (warm)
-    # Seamlessly continuous on the torus
-    v          = world.uv[:, :, 1]                          # [0..1]
-    lat_factor = np.cos(np.pi * v).astype(np.float32)       # [-1..1]
+    v          = world.uv[:, :, 1]
+    lat_factor = np.cos(np.pi * v).astype(np.float32)
 
-    temp_base   = 20.0   # °C at equator (v=0 and v=1)
-    temp_range  = 15.0   # amplitude of latitudinal variation
-    alt_lapse   = 15.0   # °C drop per unit altitude
+    temp_base  = 20.0
+    temp_range = 15.0
+    alt_lapse  = 15.0
 
-    # Ground temperature : warm bands at v=0/v=1, cold band at v=0.5
-    # Altitude makes peaks colder
     ground_temp = (
         temp_base
         + temp_range * lat_factor
@@ -146,7 +192,6 @@ def _distribute_temperature(world: World) -> None:
     world.front.ground_temp = ground_temp
     world.front.atmo_temp   = atmo_temp
 
-    # Initial pressure from formula
     P_base   = cfg["P_base"]
     k_temp   = cfg["k_temp"]
     k_alt    = cfg["k_alt"]

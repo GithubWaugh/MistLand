@@ -9,29 +9,26 @@ Vegetation levels (ordered) :
     3 = Shrubs
     4 = Trees
 
+Fertility modulation :
+    world.fertility [-1..1] adjusts thresholds locally :
+    - Positive fertility : lower water/nutriment requirements,
+                          higher stress tolerance (immune to devolution)
+    - Negative fertility : higher requirements, lower stress tolerance
+
+    effective_water_min  = water_min  - fertility * fertility_water_range
+    effective_nut_min    = nut_min    - fertility * fertility_nut_range
+    devolution blocked if fertility > stress_immunity
+
+Desynchronisation :
+    When a cell grows or devolves, its tick counter is reset to a random
+    value in [0, growth_period // 2] instead of 0. This breaks the
+    synchronous wave behaviour seen in large homogeneous patches.
+
 Water budget (closed) :
-    - On growth   : ground_water -= cost_water
+    - On growth   : ground_water -= cost_water (clamped to available)
                     vegetation_water += cost_water
-    - On devolution : ground_water += vegetation_water (all stored water returned)
-                      mist_accumulator += devolution_water_release (extra atmospheric release)
+    - On devolution : ground_water += vegetation_water
                       vegetation_water = 0
-
-This ensures total water = ground_water + mist + mist_accumulator
-                          + vegetation_water  remains constant.
-
-Growth conditions (all must be met) :
-    - ground_water >= water_min
-    - temp_min <= ground_temp <= temp_max
-    - nutriments >= nutriments_min  (except Lichens : grow from nothing)
-    - veg_tick_counter >= growth_period_ticks
-
-Devolution conditions (any is sufficient) :
-    - ground_water < water_min
-    - ground_temp out of [temp_min, temp_max]
-
-Lichens special case :
-    - Grow from None with no water/nutriment cost
-    - When destroyed (Lichens → None), release extra nutriments
 """
 
 from __future__ import annotations
@@ -41,7 +38,6 @@ import numpy as np
 if TYPE_CHECKING:
     from sim.world import World
 
-from sim.phases.evaporation import MIST_UNIT
 from sim.world import VEG_NONE, VEG_LICHENS, VEG_GRASS, VEG_SHRUBS, VEG_TREES
 
 
@@ -58,11 +54,16 @@ def step(world: "World") -> None:
     cost_water      = cfg["growth_cost_water"]
     cost_nut        = int(cfg["growth_cost_nutriments"])
     release_nut     = int(cfg["devolution_nutriments_release"])
-    release_water   = cfg["devolution_water_release"]
     alb_reduction   = alb_cfg["vegetation_reduction_per_level"]
 
-    f = world.front
-    b = world.back
+    # Fertility modulation ranges
+    fertility_water_range = 0.10
+    fertility_nut_range   = 5.0
+    stress_immunity       = 0.6
+
+    f   = world.front
+    b   = world.back
+    fer = world.fertility   # float32 [-1..1], static
 
     veg      = f.vegetation.copy()
     gw       = f.ground_water.copy()
@@ -70,39 +71,50 @@ def step(world: "World") -> None:
     nut      = f.nutriments.astype(np.int16)
     counter  = f.veg_tick_counter.copy()
 
-    # --- Conditions ---
-    water_ok  = gw >= water_min
+    # --- Random offset for counter reset (desynchronisation) ---
+    # Each cell that grows or devolves restarts from a random point
+    # in [0, growth_period // 2] rather than 0, breaking patch synchrony.
+    max_offset = max(1, growth_period // 2)
+    rng_offset = np.random.randint(
+        0, max_offset,
+        size=counter.shape
+    ).astype(np.uint16)
+
+    # --- Fertility-adjusted thresholds ---
+    eff_water_min = (water_min - fer * fertility_water_range).astype(np.float32)
+    eff_nut_min   = (nut_min   - fer * fertility_nut_range).astype(np.float32)
+
+    # --- Growth conditions ---
+    water_ok  = gw >= eff_water_min
     temp_ok   = (f.ground_temp >= temp_min) & (f.ground_temp <= temp_max)
-    nut_ok    = nut >= nut_min
+    nut_ok    = nut.astype(np.float32) >= eff_nut_min
     timer_ok  = counter >= growth_period
 
     can_grow  = water_ok & temp_ok & timer_ok & (veg < VEG_TREES)
 
-    # Lichens : grow from None without nutriment requirement
     lichen_growth = can_grow & (veg == VEG_NONE)
     normal_growth = can_grow & (veg > VEG_NONE) & nut_ok
 
-    grows    = lichen_growth | normal_growth
+    grows = lichen_growth | normal_growth
+
+    # --- Devolution conditions ---
     stress   = (~water_ok) | (~temp_ok)
-    devolves = stress & (veg > VEG_NONE) & ~grows
+    immune   = fer >= stress_immunity
+    devolves = stress & ~immune & (veg > VEG_NONE) & ~grows
 
     # --- Apply growth ---
-    # Water : ground_water → vegetation_water
     water_consumed = np.where(
-        grows & (veg > VEG_NONE),   # Lichens have no water cost
+        grows & (veg > VEG_NONE),
         cost_water,
         0.0
     ).astype(np.float32)
 
-    # Clamp : cannot consume more than available ground water
+    # Clamp : cannot consume more than available
     water_consumed = np.minimum(water_consumed, gw)
+
     gw    -= water_consumed
-    negative_gw = float(np.minimum(gw, 0.0).sum())
-    if abs(negative_gw) > 0.1:
-        print(f"  gw negative after growth: {negative_gw:.4f}")
     veg_w += water_consumed
 
-    # Nutriments consumed (not Lichens)
     nut = np.where(
         grows & (veg > VEG_NONE),
         nut - cost_nut,
@@ -110,18 +122,16 @@ def step(world: "World") -> None:
     ).astype(np.int16)
 
     veg     = np.where(grows, veg + np.uint8(1), veg).astype(np.uint8)
-    counter = np.where(grows, np.uint16(0), counter).astype(np.uint16)
+    counter = np.where(grows, rng_offset, counter).astype(np.uint16)
 
     # --- Apply devolution ---
-    # All stored water returned to ground
     gw   += np.where(devolves, veg_w, 0.0).astype(np.float32)
     veg_w = np.where(devolves, 0.0, veg_w).astype(np.float32)
 
-    # Nutriments released
     nut = np.where(devolves, nut + release_nut, nut).astype(np.int16)
 
     veg     = np.where(devolves, veg - np.uint8(1), veg).astype(np.uint8)
-    counter = np.where(devolves, np.uint16(0), counter).astype(np.uint16)
+    counter = np.where(devolves, rng_offset, counter).astype(np.uint16)
 
     # Lichens destroyed → extra nutriments
     lichen_destroyed = devolves & (f.vegetation == VEG_LICHENS)
@@ -136,9 +146,9 @@ def step(world: "World") -> None:
 
     # --- Clamp ---
     veg   = np.clip(veg,   VEG_NONE, VEG_TREES).astype(np.uint8)
-    gw    = np.maximum(gw, 0.0).astype(np.float32)
+    gw    = np.maximum(gw,   0.0).astype(np.float32)
     veg_w = np.maximum(veg_w, 0.0).astype(np.float32)
-    nut   = np.clip(nut,  0, 255).astype(np.int16)
+    nut   = np.clip(nut,   0, 255).astype(np.int16)
 
     # --- Update albedo ---
     albedo = np.empty((world.height, world.width), dtype=np.float32)
@@ -148,29 +158,10 @@ def step(world: "World") -> None:
     albedo -= veg.astype(np.float32) * alb_reduction
     albedo  = np.clip(albedo, 0.05, 1.0).astype(np.float32)
 
-    # Cas : cellule dévole avec veg_w > 0 mais niveau = VEG_LICHENS
-    lichen_devolves_with_water = devolves & (f.vegetation == VEG_LICHENS) & (veg_w > 0)
-    if lichen_devolves_with_water.any():
-        print(f"  lichens devolving with veg_w: {veg_w[lichen_devolves_with_water].sum():+.3f}")
-
-    # Cas : cellule pousse depuis None (lichen) sans coût mais veg_w déjà > 0
-    lichen_grows_with_water = grows & (f.vegetation == VEG_NONE) & (f.vegetation_water > 0)
-    if lichen_grows_with_water.any():
-        print(f"  none→lichen with existing veg_w: {f.vegetation_water[lichen_grows_with_water].sum():+.3f}")
-
-    delta_gw   = float((gw   - f.ground_water).sum())
-    delta_vegw = float((veg_w - f.vegetation_water).sum())
-    delta_mist = float((b.mist - f.mist).sum()) * MIST_UNIT if hasattr(b, 'mist') else 0
-    total = delta_gw + delta_vegw
-    if abs(total) > 0.1:
-        print(f"  veg internal: gw={delta_gw:+.2f} vegw={delta_vegw:+.2f} "
-            f"grows={int(grows.sum())} devolves={int(devolves.sum())}")
-
     # --- Apply to back buffer ---
     b.vegetation       = veg
     b.ground_water     = gw
     b.vegetation_water = veg_w
     b.nutriments       = nut.astype(np.uint8)
-    #b.mist_accumulator = macc
     b.albedo           = albedo
     b.veg_tick_counter = counter
