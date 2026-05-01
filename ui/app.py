@@ -8,6 +8,7 @@ Layers (bottom to top) :
   2. Data overlay : water / temperature / pressure / altitude
                     exclusive, toggle 1/2/3/5
   3. Veg icons    : drawn per cell — toggle 4
+                    submerged lichen displayed as algae (~)
   4. Mist overlay : white veil, opacity = mist level — toggle 6
 
 Controls :
@@ -26,11 +27,13 @@ Controls :
   ESC / Q     : quit
 """
 
+import math
 import pygame
 import numpy as np
 import time
 
 from sim.world import World, VEG_NONE, VEG_LICHENS, VEG_GRASS, VEG_SHRUBS, VEG_TREES
+from sim.world import BASE_BARE, BASE_SAND, BASE_SOIL
 
 
 # ---------------------------------------------------------------------------
@@ -42,15 +45,15 @@ COLOR_SOIL      = (120,  85,  50)
 COLOR_BG        = (20,  20,  20)
 
 COLOR_LICHEN    = (80,  110,  60)
+COLOR_ALGAE     = (50,  170,  140)   # teal blue-green for submerged lichen
 COLOR_GRASS     = (120, 180,  80)
 COLOR_SHRUB     = (60,  130,  60)
 COLOR_TREE_C    = (30,   90,  40)
 COLOR_TREE_T    = (80,   55,  30)
 
 OVERLAY_ALPHA   = 160
-MIST_ALPHA_MAX  = 200   # max opacity for mist=7
+MIST_ALPHA_MAX  = 200
 
-# UI
 WINDOW_TITLE    = "MistLand"
 WINDOW_W        = 1024
 WINDOW_H        = 512
@@ -63,7 +66,6 @@ INFO_FONT_SIZE  = 14
 SPEED_STEPS     = [0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 SPEED_DEFAULT   = 2
 
-# Overlay modes (exclusive)
 OV_NONE     = 0
 OV_WATER    = 1
 OV_TEMP     = 2
@@ -134,16 +136,20 @@ def _pressure_rgb(world: World) -> np.ndarray:
     return _lerp_colour((80, 20, 120), (240, 200, 30), t)
 
 
-def _build_mist_surface(world: World, view_w: int, view_h: int,
-                        cam_x: float, cam_y: float,
-                        zoom: int) -> pygame.Surface | None:
-    """
-    Build an RGBA surface for the mist overlay.
-    Each cell's alpha = (mist / 7) * MIST_ALPHA_MAX.
-    White (255, 255, 255) with variable alpha.
-    """
-    world_w, world_h = world.width, world.height
+def _compute_flooded(world: World) -> np.ndarray:
+    """Return boolean mask : True where ground_water >= flooding_threshold."""
+    base_cfg = world.config["base_types"]
+    bt = world.base_type
+    thresh = np.empty((world.height, world.width), dtype=np.float32)
+    thresh[bt == BASE_BARE] = base_cfg["bare"]["flooding_threshold"]
+    thresh[bt == BASE_SAND] = base_cfg["sand"]["flooding_threshold"]
+    thresh[bt == BASE_SOIL] = base_cfg["soil"]["flooding_threshold"]
+    return world.front.ground_water >= thresh
 
+
+def _build_mist_surface(world: World, view_w: int, view_h: int,
+                        cam_x: float, cam_y: float, zoom: int):
+    world_w, world_h = world.width, world.height
     cell_x0 = int(cam_x)
     cell_y0 = int(cam_y)
     cells_x  = -(-view_w // zoom) + 1
@@ -155,30 +161,17 @@ def _build_mist_surface(world: World, view_w: int, view_h: int,
     if mist_crop.size == 0:
         return None
 
-    # Alpha channel : proportional to mist level
-    alpha = (mist_crop.astype(np.float32) / 7.0 * MIST_ALPHA_MAX).astype(np.uint8)
-
-    # RGBA array : white + alpha
+    alpha    = (mist_crop.astype(np.float32) / 7.0 * MIST_ALPHA_MAX).astype(np.uint8)
     h_crop, w_crop = mist_crop.shape
-    rgba = np.zeros((h_crop, w_crop, 4), dtype=np.uint8)
-    rgba[:, :, 0] = 255   # R
-    rgba[:, :, 1] = 255   # G
-    rgba[:, :, 2] = 255   # B
-    rgba[:, :, 3] = alpha
-
-    # Build surface with per-pixel alpha
-    # Fill RGB with white, then set alpha channel separately
-    surf = pygame.Surface((w_crop, h_crop), pygame.SRCALPHA)
-    surf.fill((255, 255, 255, 0))   # white, fully transparent base
+    surf     = pygame.Surface((w_crop, h_crop), pygame.SRCALPHA)
+    surf.fill((255, 255, 255, 0))
     alpha_arr = pygame.surfarray.pixels_alpha(surf)
-    alpha_arr[:, :] = alpha.transpose(1, 0)   # (w, h) for pygame
-    del alpha_arr   # release lock
+    alpha_arr[:, :] = alpha.transpose(1, 0)
+    del alpha_arr
 
-    # Scale to zoom
     scaled_w = (cell_x1 - cell_x0) * zoom
     scaled_h = (cell_y1 - cell_y0) * zoom
     scaled   = pygame.transform.scale(surf, (scaled_w, scaled_h))
-
     return scaled, -int((cam_x - cell_x0) * zoom), -int((cam_y - cell_y0) * zoom)
 
 
@@ -187,7 +180,12 @@ def _build_mist_surface(world: World, view_w: int, view_h: int,
 # ---------------------------------------------------------------------------
 
 def _draw_veg_icon(surface: pygame.Surface, veg_level: int,
-                   px: int, py: int, size: int) -> None:
+                   px: int, py: int, size: int,
+                   submerged: bool = False) -> None:
+    """
+    Draw a vegetation icon for one cell.
+    submerged=True + VEG_LICHENS → draw algae ~ icon in teal.
+    """
     if veg_level == VEG_NONE or size < 2:
         return
 
@@ -196,9 +194,28 @@ def _draw_veg_icon(surface: pygame.Surface, veg_level: int,
     s  = max(1, size)
 
     if veg_level == VEG_LICHENS:
-        r = max(1, s // 3)
-        pygame.draw.ellipse(surface, COLOR_LICHEN,
-                            (cx - r, cy - max(1, r // 2), r * 2, max(1, r)))
+        if submerged:
+            # Algae : sinusoidal ~ wave in teal
+            if size >= 4:
+                w     = max(4, s * 2 // 3)
+                amp   = max(1, s // 5)
+                steps = max(6, w)
+                x0    = px + (size - w) // 2
+                pts   = []
+                for i in range(steps + 1):
+                    x = x0 + i * w // steps
+                    y = cy + int(amp * math.sin(i * 2 * math.pi / steps * 1.5))
+                    pts.append((x, y))
+                if len(pts) >= 2:
+                    pygame.draw.lines(surface, COLOR_ALGAE, False, pts,
+                                      max(1, size // 6))
+            else:
+                pygame.draw.rect(surface, COLOR_ALGAE, (px, py, s, s))
+        else:
+            r = max(1, s // 3)
+            pygame.draw.ellipse(surface, COLOR_LICHEN,
+                                (cx - r, cy - max(1, r // 2), r * 2, max(1, r)))
+
     elif veg_level == VEG_GRASS:
         if size >= 4:
             h = max(2, s // 3)
@@ -208,9 +225,11 @@ def _draw_veg_icon(surface: pygame.Surface, veg_level: int,
                                  (cx + offset, cy - h), 1)
         else:
             pygame.draw.rect(surface, COLOR_GRASS, (px, py, s, s))
+
     elif veg_level == VEG_SHRUBS:
         r = max(1, s // 3)
         pygame.draw.circle(surface, COLOR_SHRUB, (cx, cy), r)
+
     elif veg_level == VEG_TREES:
         r       = max(1, s // 3)
         trunk_w = max(1, s // 6)
@@ -243,7 +262,6 @@ def _crop_and_scale(rgb: np.ndarray, cam_x: float, cam_y: float,
     scaled_w = (cell_x1 - cell_x0) * zoom
     scaled_h = (cell_y1 - cell_y0) * zoom
     scaled   = pygame.transform.scale(surf, (scaled_w, scaled_h))
-
     return scaled, -int((cam_x - cell_x0) * zoom), -int((cam_y - cell_y0) * zoom)
 
 
@@ -278,7 +296,7 @@ def run(world: World) -> None:
 
     overlay_mode = OV_NONE
     show_veg     = True
-    show_mist    = True   # mist visible by default
+    show_mist    = True
 
     paused     = False
     speed_idx  = SPEED_DEFAULT
@@ -305,7 +323,7 @@ def run(world: World) -> None:
         if base_surf:
             screen.blit(base_surf, (ox, oy))
 
-        # Data overlay (exclusive)
+        # Data overlay
         if overlay_mode != OV_NONE:
             if overlay_mode == OV_WATER:
                 ov_rgb = _water_rgb(world)
@@ -330,17 +348,21 @@ def run(world: World) -> None:
             cells_y = -(-view_h // zoom) + 1
             cell_x1 = min(cell_x0 + cells_x, world_w)
             cell_y1 = min(cell_y0 + cells_y, world_h)
-            veg = world.front.vegetation
+
+            veg        = world.front.vegetation
+            is_flooded = _compute_flooded(world)
+
             for cy in range(cell_y0, cell_y1):
                 for cx in range(cell_x0, cell_x1):
                     level = int(veg[cy, cx])
                     if level == VEG_NONE:
                         continue
+                    submerged = bool(is_flooded[cy, cx])
                     px = int((cx - cam_x) * zoom)
                     py = int((cy - cam_y) * zoom)
-                    _draw_veg_icon(screen, level, px, py, zoom)
+                    _draw_veg_icon(screen, level, px, py, zoom, submerged)
 
-        # Mist overlay (per-pixel alpha, always on top)
+        # Mist overlay
         if show_mist:
             result = _build_mist_surface(
                 world, view_w, view_h, cam_x, cam_y, zoom)

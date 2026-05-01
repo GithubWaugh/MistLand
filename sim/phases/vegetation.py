@@ -4,25 +4,25 @@ Phase 3 : Vegetation growth and devolution.
 
 Vegetation levels (ordered) :
     0 = None
-    1 = Lichens
+    1 = Lichens  (also displayed as algae when submerged — handled in UI)
     2 = Grass
     3 = Shrubs
     4 = Trees
 
 Fertility modulation :
-    world.fertility [-1..1] adjusts thresholds locally :
-    - Positive fertility : lower water/nutriment requirements,
-                          higher stress tolerance (immune to devolution)
-    - Negative fertility : higher requirements, lower stress tolerance
-
-    effective_water_min  = water_min  - fertility * fertility_water_range
-    effective_nut_min    = nut_min    - fertility * fertility_nut_range
-    devolution blocked if fertility > stress_immunity
+    world.fertility [-1..1] adjusts thresholds locally.
 
 Desynchronisation :
-    When a cell grows or devolves, its tick counter is reset to a random
-    value in [0, growth_period // 2] instead of 0. This breaks the
-    synchronous wave behaviour seen in large homogeneous patches.
+    Counter reset to random [0, growth_period//2] on grow/devolve.
+
+Flooding rules (applied every tick, immediately) :
+    - Flooded cell (ground_water >= flooding_threshold) :
+        veg > VEG_LICHENS → forced devolution by one step per tick
+        lichen stays as lichen (displayed as algae in UI)
+    - Cell adjacent to a flooded cell :
+        base_type == BARE → veg_max = VEG_GRASS  (rocky bank)
+        base_type == SAND → veg_max = VEG_SHRUBS (sandy bank)
+        growth beyond veg_max is blocked
 
 Water budget (closed) :
     - On growth   : ground_water -= cost_water (clamped to available)
@@ -39,6 +39,10 @@ if TYPE_CHECKING:
     from sim.world import World
 
 from sim.world import VEG_NONE, VEG_LICHENS, VEG_GRASS, VEG_SHRUBS, VEG_TREES
+from sim.world import BASE_BARE, BASE_SAND, BASE_SOIL
+
+
+_NEIGHBOURS = [(0, 1), (0, -1), (1, -1), (1, 1)]
 
 
 def step(world: "World") -> None:
@@ -56,14 +60,14 @@ def step(world: "World") -> None:
     release_nut     = int(cfg["devolution_nutriments_release"])
     alb_reduction   = alb_cfg["vegetation_reduction_per_level"]
 
-    # Fertility modulation ranges
     fertility_water_range = 0.10
     fertility_nut_range   = 5.0
     stress_immunity       = 0.6
 
     f   = world.front
     b   = world.back
-    fer = world.fertility   # float32 [-1..1], static
+    fer = world.fertility
+    bt  = world.base_type
 
     veg      = f.vegetation.copy()
     gw       = f.ground_water.copy()
@@ -71,14 +75,34 @@ def step(world: "World") -> None:
     nut      = f.nutriments.astype(np.int16)
     counter  = f.veg_tick_counter.copy()
 
-    # --- Random offset for counter reset (desynchronisation) ---
-    # Each cell that grows or devolves restarts from a random point
-    # in [0, growth_period // 2] rather than 0, breaking patch synchrony.
+    # --- Random offset for desynchronisation ---
     max_offset = max(1, growth_period // 2)
     rng_offset = np.random.randint(
-        0, max_offset,
-        size=counter.shape
+        0, max_offset, size=counter.shape
     ).astype(np.uint16)
+
+    # --- Flooding masks ---
+    flood_thresh = np.empty((world.height, world.width), dtype=np.float32)
+    flood_thresh[bt == BASE_BARE] = base_cfg["bare"]["flooding_threshold"]
+    flood_thresh[bt == BASE_SAND] = base_cfg["sand"]["flooding_threshold"]
+    flood_thresh[bt == BASE_SOIL] = base_cfg["soil"]["flooding_threshold"]
+
+    is_flooded = gw >= flood_thresh
+
+    # Cells adjacent to at least one flooded cell
+    has_flooded_neighbour = np.zeros((world.height, world.width), dtype=bool)
+    for axis, shift in _NEIGHBOURS:
+        has_flooded_neighbour |= np.roll(is_flooded, shift, axis=axis)
+
+    # --- Vegetation cap from bank rules ---
+    # Default : no cap (trees allowed)
+    veg_max = np.full((world.height, world.width), VEG_TREES, dtype=np.uint8)
+    # Rocky bank : max grass
+    veg_max[has_flooded_neighbour & (bt == BASE_BARE)] = VEG_GRASS
+    # Sandy bank : max shrubs
+    veg_max[has_flooded_neighbour & (bt == BASE_SAND)] = VEG_SHRUBS
+    # Flooded cells : only lichen survives
+    veg_max[is_flooded] = VEG_LICHENS
 
     # --- Fertility-adjusted thresholds ---
     eff_water_min = (water_min - fer * fertility_water_range).astype(np.float32)
@@ -90,17 +114,17 @@ def step(world: "World") -> None:
     nut_ok    = nut.astype(np.float32) >= eff_nut_min
     timer_ok  = counter >= growth_period
 
-    can_grow  = water_ok & temp_ok & timer_ok & (veg < VEG_TREES)
+    can_grow  = water_ok & temp_ok & timer_ok & (veg < veg_max)
 
     lichen_growth = can_grow & (veg == VEG_NONE)
     normal_growth = can_grow & (veg > VEG_NONE) & nut_ok
 
     grows = lichen_growth | normal_growth
 
-    # --- Devolution conditions ---
+    # --- Normal devolution conditions ---
     stress   = (~water_ok) | (~temp_ok)
     immune   = fer >= stress_immunity
-    devolves = stress & ~immune & (veg > VEG_NONE) & ~grows
+    devolves = stress & ~immune & (veg > VEG_NONE) & ~grows & ~is_flooded
 
     # --- Apply growth ---
     water_consumed = np.where(
@@ -109,7 +133,6 @@ def step(world: "World") -> None:
         0.0
     ).astype(np.float32)
 
-    # Clamp : cannot consume more than available
     water_consumed = np.minimum(water_consumed, gw)
 
     gw    -= water_consumed
@@ -124,22 +147,29 @@ def step(world: "World") -> None:
     veg     = np.where(grows, veg + np.uint8(1), veg).astype(np.uint8)
     counter = np.where(grows, rng_offset, counter).astype(np.uint16)
 
-    # --- Apply devolution ---
+    # --- Apply normal devolution ---
     gw   += np.where(devolves, veg_w, 0.0).astype(np.float32)
     veg_w = np.where(devolves, 0.0, veg_w).astype(np.float32)
-
-    nut = np.where(devolves, nut + release_nut, nut).astype(np.int16)
-
-    veg     = np.where(devolves, veg - np.uint8(1), veg).astype(np.uint8)
+    nut   = np.where(devolves, nut + release_nut, nut).astype(np.int16)
+    veg   = np.where(devolves, veg - np.uint8(1), veg).astype(np.uint8)
     counter = np.where(devolves, rng_offset, counter).astype(np.uint16)
 
-    # Lichens destroyed → extra nutriments
     lichen_destroyed = devolves & (f.vegetation == VEG_LICHENS)
     nut = np.where(lichen_destroyed, nut + release_nut, nut).astype(np.int16)
 
+    # --- Apply flooding devolution (one step per tick toward lichen) ---
+    flood_devolves = is_flooded & (veg > VEG_LICHENS) & ~grows & ~devolves
+
+    gw   += np.where(flood_devolves, veg_w, 0.0).astype(np.float32)
+    veg_w = np.where(flood_devolves, 0.0, veg_w).astype(np.float32)
+    nut   = np.where(flood_devolves, nut + release_nut, nut).astype(np.int16)
+    veg   = np.where(flood_devolves, veg - np.uint8(1), veg).astype(np.uint8)
+    counter = np.where(flood_devolves, rng_offset, counter).astype(np.uint16)
+
     # --- Increment tick counter ---
+    changed = grows | devolves | flood_devolves
     counter = np.where(
-        ~grows & ~devolves,
+        ~changed,
         np.clip(counter.astype(np.int32) + 1, 0, 65535).astype(np.uint16),
         counter
     ).astype(np.uint16)
@@ -152,9 +182,9 @@ def step(world: "World") -> None:
 
     # --- Update albedo ---
     albedo = np.empty((world.height, world.width), dtype=np.float32)
-    albedo[world.base_type == 0] = base_cfg["bare"]["albedo_base"]
-    albedo[world.base_type == 1] = base_cfg["sand"]["albedo_base"]
-    albedo[world.base_type == 2] = base_cfg["soil"]["albedo_base"]
+    albedo[bt == BASE_BARE] = base_cfg["bare"]["albedo_base"]
+    albedo[bt == BASE_SAND] = base_cfg["sand"]["albedo_base"]
+    albedo[bt == BASE_SOIL] = base_cfg["soil"]["albedo_base"]
     albedo -= veg.astype(np.float32) * alb_reduction
     albedo  = np.clip(albedo, 0.05, 1.0).astype(np.float32)
 
