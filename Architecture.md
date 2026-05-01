@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Python-based world simulation. The backend computes the world state tick by tick in RAM using numpy arrays. The frontend (pygame) reads the current state and renders it. Both run in the same Python process, in separate threads.
+Python-based world simulation. The backend computes the world state tick by tick in RAM using numpy arrays. The frontend (pygame) reads the current state and renders it. Both run in the same Python process.
 
 ---
 
@@ -12,15 +12,15 @@ Python-based world simulation. The backend computes the world state tick by tick
 MistLand/
 │
 ├── config/
-│   └── default.json          # All tunable parameters (see Concept.md § Configuration reference)
+│   └── default.json          # All tunable parameters with _comment annotations
 │
 ├── data/
-│   └── saves/                # World state dumps (manual save/load)
+│   └── saves/                # World state dumps (manual save/load — not yet implemented)
 │
 ├── sim/                      # Backend — simulation logic
 │   ├── __init__.py
 │   ├── world.py              # World class : holds all numpy arrays, exposes tick()
-│   ├── generation.py         # World generation : simplex noise, initial state
+│   ├── generation.py         # World generation : value noise, fertility, initial state
 │   ├── phases/               # One module per simulation phase
 │   │   ├── __init__.py
 │   │   ├── temperature.py
@@ -31,15 +31,11 @@ MistLand/
 │   │   ├── atmosphere.py
 │   │   ├── water.py
 │   │   └── rain.py
-│   └── io.py                 # Save / load world state to disk
+│   └── io.py                 # Save / load world state (planned)
 │
 ├── ui/                       # Frontend — rendering and input
 │   ├── __init__.py
-│   ├── app.py                # Main pygame loop, thread management
-│   ├── map_view.py           # 2D top-down grid view
-│   ├── overlays.py           # Temperature, pressure, water overlays
-│   ├── text_frame.py         # Command-line interaction panel
-│   └── torus_view.py         # 3D torus view (ModernGL) — later milestone
+│   └── app.py                # Main pygame loop, overlays, inspect panel
 │
 ├── main.py                   # Entry point
 ├── requirements.txt
@@ -59,24 +55,27 @@ All arrays live in a single `World` object.
 
 | Array | dtype | Description |
 |-------|-------|-------------|
-| `altitude` | `float32` | Cell altitude, generated via simplex noise |
+| `altitude` | `float32` | Cell altitude [0..1], generated via seamlessly-tiling value noise (6 octaves) |
 | `base_type` | `uint8` | 0 = bare, 1 = sand, 2 = soil |
+| `fertility` | `float32` | Local life-favourability [-1..1] ; noise frequency varies by base type |
+| `uv` | `float32` | Normalized (u, v) coordinates, shape (height, width, 2) |
 
-#### Ground layer *(updated each tick)*
+#### Ground layer *(updated each tick, stored in WorldBuffers)*
 
 | Array | dtype | Range | Description |
 |-------|-------|-------|-------------|
-| `ground_water` | `float32` | [0..1] | Water quantity at ground level |
+| `ground_water` | `float32` | [0..+∞) | Water at ground level. Above flooding_threshold = lake. |
 | `nutriments` | `uint8` | [0..255] | Organic nutriment quantity |
 | `ground_temp` | `float32` | °C | Ground temperature |
 | `albedo` | `float32` | [0..1] | Energy reflection coefficient |
+| `vegetation_water` | `float32` | [0..+∞) | Water stored inside plants (part of conserved total) |
 
 #### Atmospheric layer *(updated each tick)*
 
 | Array | dtype | Range | Description |
 |-------|-------|-------|-------------|
 | `pressure` | `float32` | bar | Atmospheric pressure (drives wind) |
-| `mist` | `uint8` | [0..7] | Airborne water quantity |
+| `mist` | `float32` | [0..7] | Airborne water — continuous float (no integer rounding artefacts) |
 | `atmo_temp` | `float32` | °C | Atmospheric temperature |
 
 #### Vegetation layer *(updated each tick)*
@@ -84,143 +83,176 @@ All arrays live in a single `World` object.
 | Array | dtype | Range | Description |
 |-------|-------|-------|-------------|
 | `vegetation` | `uint8` | [0..4] | 0=None, 1=Lichens, 2=Grass, 3=Shrubs, 4=Trees |
-| `veg_tick_counter` | `uint16` | ticks | Ticks since last vegetation change (for growth period) |
-
-#### UV coordinates *(static, set at generation)*
-
-| Array | dtype | Range | Description |
-|-------|-------|-------|-------------|
-| `uv` | `float32` | [0..1] | Normalized (u, v) coordinates, shape (height, width, 2) |
+| `veg_tick_counter` | `uint16` | ticks | Ticks since last vegetation change |
 
 ---
 
 ### Double buffer
 
-To avoid race conditions between the simulation thread and the render thread, the `World` object maintains two sets of mutable arrays : **buffer A** and **buffer B**.
+The `World` object maintains two `WorldBuffers` instances : **front** and **back**.
 
-- The simulation writes to the **back buffer**
-- The renderer reads from the **front buffer**
-- After each tick, buffers are swapped (pointer swap, no data copy)
+- The renderer reads from `front`
+- Each phase reads from `front` and writes to `back`
+- After each phase : `swap_buffers()` + `sync_back_from_front()` — back becomes the new front for the next phase
 
 ```python
-# Simplified swap
+# After each phase :
 world.front, world.back = world.back, world.front
+world.back.copy_from(world.front)   # sync for next phase
 ```
+
+This pattern ensures every phase sees a fully consistent, up-to-date world state, and inter-phase dependencies are respected (e.g. evaporation updates mist before atmosphere reads it).
 
 ---
 
 ## Tick loop
 
-Each tick executes the simulation phases in order, all operating on numpy arrays :
-
 ```python
-def tick(world: World) -> None:
-    temperature.step(world)
-    pressure.step(world)
-    vegetation.step(world)
-    nutriments.step(world)
-    evaporation.step(world)
-    atmosphere.step(world)
-    water.step(world)
-    rain.step(world)
-    world.swap_buffers()
-    world.tick_count += 1
+def tick(self) -> None:
+    self.sync_back_from_front()
+
+    temperature.step(self);  self.swap_buffers(); self.sync_back_from_front()
+    pressure.step(self);     self.swap_buffers(); self.sync_back_from_front()
+    vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
+    nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
+    evaporation.step(self);  self.swap_buffers(); self.sync_back_from_front()
+    atmosphere.step(self);   self.swap_buffers(); self.sync_back_from_front()
+    water.step(self);        self.swap_buffers(); self.sync_back_from_front()
+    rain.step(self);         self.swap_buffers()
+
+    self.tick_count += 1
 ```
 
-Each phase module exposes a single `step(world)` function. Phases read from `world.back` and write to `world.back` (the front buffer is untouched during computation).
+Each phase module exposes a single `step(world)` function that reads from `world.front` and writes to `world.back`.
 
-### Tick loop — note on buffer swap
+---
 
-Each phase is followed by swap_buffers() + sync_back_from_front(),
-so that every phase reads a fully consistent and up-to-date world state.
-This ensures inter-phase dependencies are respected within a single tick
-(e.g. evaporation modifies mist before rain reads it).
+## Conservation laws
+
+Two quantities are strictly conserved across all ticks :
+
+**Total water** = `ground_water.sum() + mist.sum() × MIST_UNIT + vegetation_water.sum()`
+- `mist` is `float32` to avoid integer rounding losses
+- `water.py` applies a float32 rounding correction after runoff
+- `atmosphere.py` converts excess mist > 7.0 to ground water instead of clipping
+
+**Total energy** = `ground_temp.sum() + atmo_temp.sum()`
+- `temperature.py` uses a net flux formula : what leaves ground enters atmosphere exactly
+- `atmosphere.py` uses antisymmetric net flux for temperature transport
+
+---
+
+## Key implementation notes
+
+### Mist : float32 instead of uint8
+
+`mist` was originally `uint8 [0..7]`. It was changed to `float32 [0..7]` to eliminate integer rounding artefacts (checkerboard pattern in cloud display and water conservation errors).
+The `mist_accumulator` field (previously used to buffer fractional evaporation) was removed as a consequence.
+
+### Hydraulic altitude for runoff
+
+Runoff in `water.py` uses hydraulic altitude rather than terrain altitude :
+```
+effective_alt = altitude + ground_water × water_to_altitude
+```
+This prevents water from flowing into already-flooded cells that happen to be at lower terrain altitude.
+
+### Seamlessly-tiling noise
+
+`generation.py` uses value noise with `period = frequency` (integer) for each octave. This guarantees `noise(x=0) == noise(x=frequency)` on both axes — perfectly seamless on the torus.
+
+### Vegetation desynchronisation
+
+When a cell grows or devolves, its `veg_tick_counter` resets to a random value in `[0, growth_period/2]` rather than 0. This breaks the synchronous wave behaviour seen in large homogeneous patches.
 
 ---
 
 ## Threading model
 
-```
-Main thread
-  └── pygame event loop + rendering (reads world.front)
-
-Simulation thread
-  └── tick loop (writes world.back, then swaps)
-```
-
-Synchronization : a single `threading.Event` flag.
+Currently single-threaded : the simulation tick runs in the pygame main loop (accumulator-based timing). No separate thread is needed since tick times are well under 16ms at current grid sizes.
 
 ```python
-tick_done = threading.Event()
-
-# Simulation thread
-while running:
-    if auto_mode or step_requested:
-        tick(world)
-        tick_done.set()         # signal renderer
-        step_requested = False
-
-# Render thread
-while running:
-    tick_done.wait()
-    tick_done.clear()
-    render(world.front)         # safe read
+# In pygame loop :
+tick_accum += dt
+interval = 1.0 / ticks_per_second
+while tick_accum >= interval:
+    world.tick()
+    tick_accum -= interval
 ```
+
+*(Multi-threading planned if larger grids require it)*
 
 ---
 
-## Save / load
+## World generation
 
-World state is saved as a collection of numpy `.npy` files, one per array, bundled in a `.npz` archive alongside a metadata JSON file.
+`generation.py` populates the world in order :
+
+1. **Altitude** : 6-octave value noise (freqs 2, 4, 8, 16, 32, 64) + gaussian blur
+2. **Base type** : altitude thresholds (bare < 0.3, sand < 0.6, soil ≥ 0.6)
+3. **Fertility** : per-base-type noise at different frequencies, blended into a [-1..1] field
+4. **Water distribution** : weighted by inverse altitude (low areas get more water)
+5. **Temperature** : latitudinal gradient `cos(π·v)` + altitude lapse rate
+6. **Albedo** : from base type
+
+---
+
+## UI — app.py
+
+Single file, all rendering in pygame. Key features :
+
+| Feature | Key | Notes |
+|---------|-----|-------|
+| Step one tick | Space | Only when paused |
+| Pause / resume | A | |
+| Speed control | PgUp / PgDn | 8 steps : 0.25 to 50 t/s |
+| Water overlay | 1 | Semi-transparent, exclusive |
+| Temperature overlay | 2 | Semi-transparent, exclusive |
+| Pressure overlay | 3 | Semi-transparent, exclusive |
+| Vegetation icons | 4 | Toggle ; hidden below zoom 4x |
+| Altitude overlay | 5 | Spectral (violet→red), opaque, exclusive |
+| Mist overlay | 6 | White veil, per-pixel alpha |
+| Inspect panel | I | Cell info following mouse cursor |
+| Zoom | Mouse wheel | 1x – 32x, centred on cursor |
+| Pan | RMB / MMB drag | Clamped to world bounds |
+
+Lakes are displayed in blue on the base layer (dynamic, recomputed each frame).
+Submerged lichen is displayed as a teal ~ (algae icon).
+
+---
+
+## Save / load *(planned)*
+
+World state will be saved as `.npz` archive + metadata JSON :
 
 ```
 saves/
 └── save_001/
     ├── meta.json        # tick count, grid size, config snapshot
-    └── state.npz        # all arrays compressed
-```
-
-```python
-# Save
-np.savez_compressed("saves/save_001/state.npz", 
-    altitude=world.altitude,
-    ground_water=world.front.ground_water,
-    # ...
-)
-
-# Load
-data = np.load("saves/save_001/state.npz")
-world.altitude = data["altitude"]
-# ...
+    └── state.npz        # all WorldBuffers arrays compressed
 ```
 
 ---
 
 ## Configuration
 
-At startup, `config/default.json` is loaded into a plain Python dict and passed to all phase modules. Parameters are never hardcoded — always read from config.
-
-```python
-import json
-
-def load_config(path="config/default.json") -> dict:
-    with open(path) as f:
-        return json.load(f)
-```
+`config/default.json` is loaded at startup into a plain Python dict. All phase modules read parameters from this dict — nothing is hardcoded. Keys prefixed `_comment` are documentation and are ignored.
 
 ---
 
 ## Build milestones
 
-| # | Milestone | Deliverable |
-|---|-----------|-------------|
-| 1 | **Data structures** | `World` class with all numpy arrays, config loading |
-| 2 | **World generation** | Simplex noise altitude, initial water/temp distribution |
-| 3 | **Tick loop** | All 8 phases implemented, console validation (conservation laws) |
-| 4 | **2D map view** | Pygame window, one color per base type, step/auto controls |
-| 5 | **Overlays** | Temperature, water, pressure as color gradients |
-| 6 | **UI panels** | Text frame, pop-ups, parameter display |
-| 7 | **3D torus view** | ModernGL, instanced vegetation models |
+| # | Milestone | Status |
+|---|-----------|--------|
+| 1 | **Data structures** | ✅ World class, WorldBuffers, config loading |
+| 2 | **World generation** | ✅ Value noise, fertility, temperature gradient |
+| 3 | **Tick loop + all 8 phases** | ✅ Validated (water + energy conservation) |
+| 4 | **2D map view** | ✅ Pygame window, zoom, pan, lake colors |
+| 5 | **Overlays + inspect** | ✅ Water, temp, pressure, altitude (spectral), mist, inspect panel |
+| 6 | **UI controls** | ✅ Step/auto/speed, all toggle keys |
+| 7 | **3D torus view** | ⏳ ModernGL, instanced vegetation models |
+| 8 | **Save / load** | ⏳ npz archive + metadata JSON |
+| 9 | **Entities** | ⏳ Animals, feeding, movement |
 
 ---
 
@@ -229,10 +261,10 @@ def load_config(path="config/default.json") -> dict:
 ```
 numpy          # world state arrays and all vectorized operations
 pygame         # 2D rendering, event loop, UI
+scipy          # gaussian_filter for noise smoothing
 moderngl       # 3D torus view (milestone 7)
-noise          # simplex noise for world generation (library: opensimplex or similar)
 ```
 
 ```
-pip install numpy pygame moderngl opensimplex
+pip install numpy pygame scipy moderngl
 ```

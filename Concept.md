@@ -13,38 +13,44 @@ Simulation of a finite world, with vegetation, simple living entities, and basic
 One tick = one day.
 
 Player can choose :
-- **Automatic** time evolution — one tick per second by default ;
-- **Step by step** — via a "one step forward" button.
+- **Automatic** time evolution, with variable speed (0.25 to 50 ticks/second) ;
+- **Step by step** — via a "one step forward" button (Space) ;
+- **Pause / resume** — via the A key.
 
 ### Simulation phases order (per tick)
 
+Each phase is followed by a buffer swap + sync, so every phase reads a fully up-to-date world state.
+
 | # | Phase | Description |
 |---|-------|-------------|
-| 1 | **Temperature** | Ground ↔ atmosphere ↔ neighbours radiation |
+| 1 | **Temperature** | Ground ↔ atmosphere net flux ; ground ↔ neighbours radiation |
 | 2 | **Pressure** | Derived from atmospheric temperature and altitude |
 | 3 | **Vegetation** | Growth / devolution, water and nutriments consumption |
 | 4 | **Nutriments** | Diffusion to neighbours |
 | 5 | **Evaporation** | Ground water → atmosphere (mist) |
 | 6 | **Atmospheric movements** | Wind transports mist and temperature |
-| 7 | **Water movements** | Runoff from high ground to lower neighbours |
+| 7 | **Water movements** | Runoff based on hydraulic altitude |
 | 8 | **Rain** | Mist → ground water, based on temperature and humidity |
 
 ---
 
 ## Game appearance
 
-Windowed or full-screen, with several frames :
+Windowed or full-screen. Current implementation : single pygame window with overlays and inspect panel.
 
 - **Top-down view of the map**
-  - Base color / bitmap for the ground layer
-  - Overlayed icons for the vegetation (with transparency)
-  - Global overlays : hygrometry, temperature, wind, pressure, etc.
-- **Text frame** — command-line type interaction with the simulation
-- **3D view of the torus**
-  - Instancing of low-poly models for vegetation and entities (to be defined later)
-- **Pop-up windows**
-  - Display of specific cell information
-  - Parameters settings
+  - Base color for the ground layer (bare/sand/soil) ; lake cells shown in blue
+  - Overlayed icons for the vegetation (with transparency) ; submerged lichen shown as algae (~)
+  - Mist overlay : white veil, opacity proportional to airborne water (toggle 6)
+  - Exclusive data overlays (toggle 1–3, 5) :
+    - Water : ground water level
+    - Temperature : ground temperature gradient
+    - Pressure : atmospheric pressure
+    - Altitude : spectral color map (violet=low → red=high)
+  - Inspect panel (toggle I) : cell info following the mouse cursor
+
+- **Text frame** — command-line type interaction *(planned)*
+- **3D view of the torus** — ModernGL, instanced vegetation models *(planned)*
 
 ---
 
@@ -58,9 +64,9 @@ Settings defined when starting a new game :
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `grid_width` | 1024 | Grid width (u axis) |
-| `grid_height` | 512 | Grid height (v axis) |
-| `total_water` | 2.0 per cell | Total water in the world (conserved) |
+| `grid_width` | 512 | Grid width (u axis) |
+| `grid_height` | 256 | Grid height (v axis) |
+| `total_water` | 0.5 per cell | Total water in the world (conserved) |
 | `total_energy` | — | Total energy in the world (controllable) |
 
 **Data** : grids dumped to files when saving game progress.
@@ -73,22 +79,29 @@ Each cell is defined by a set of static properties and layered data.
 
 ### Static properties
 
-- **UVs**
-  - `vector2`, normalized value of each cell's cartesian coordinates.
-  - *(Will be used to vary incoming light)*
+- **UV coordinates**
+  - `vector2 float32`, normalized (u, v) position of each cell on the torus.
+
 - **Altitude**
-  - `float`, generated via simplex 2D noise + blur
+  - `float32`, generated via seamlessly-tiling value noise (6 octaves) + gaussian blur.
+  - Tiling guaranteed : lattice period = frequency for each octave.
   - *(Erosion algorithm planned for a later version)*
 
+- **Fertility**
+  - `float32 [-1..1]`, static field generated once at world creation.
+  - Positive = locally favourable to life ; negative = hostile.
+  - Noise frequency varies by base type : high frequency for bare rock (sharp patchwork), medium for sand, low for soil (broad zones).
+  - Modulates vegetation growth/devolution thresholds.
+
 - **Base type** : `bare` | `sand` | `soil`
-  - `soil` = `sand` + at least 25 organic nutriments
+  - `soil` = sand + sufficient organic nutriments
   - Each type has constant properties (defined in config) :
 
-| Base type | Thermal inertia | Water retention |
-|-----------|----------------|-----------------|
-| `bare` | high | none |
-| `sand` | low | low |
-| `soil` | medium | medium |
+| Base type | Thermal inertia | Water retention | Flooding threshold |
+|-----------|----------------|-----------------|-------------------|
+| `bare` | high | none | 0.2 |
+| `sand` | low | low | 0.5 |
+| `soil` | medium | medium | 0.8 |
 
 ---
 
@@ -96,10 +109,11 @@ Each cell is defined by a set of static properties and layered data.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `ground_water` | `float [0..1]` | Quantity of water present |
-| `nutriments` | `int [0..255]` | Quantity of organic nutriments |
-| `ground_temperature` | `float` (°C) | Ground-level temperature |
-| `albedo` | `float [0..1]` | Fraction of energy reflected ; updated each tick based on base type, water and vegetation |
+| `ground_water` | `float32 [0..+∞)` | Water at ground level. Above flooding_threshold = lake cell. |
+| `nutriments` | `uint8 [0..255]` | Organic nutriment quantity |
+| `ground_temp` | `float32` (°C) | Ground-level temperature |
+| `albedo` | `float32 [0..1]` | Energy reflection coefficient ; updated each tick |
+| `vegetation_water` | `float32` | Water stored inside plants (part of conserved total) |
 
 ---
 
@@ -107,9 +121,9 @@ Each cell is defined by a set of static properties and layered data.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `pressure` | `float` (bar) | Drives wind — see Atmosphere section |
-| `mist` | `int [0..7]` | Airborne water quantity |
-| `atmo_temperature` | `float` (°C) | Atmospheric temperature |
+| `pressure` | `float32` (bar) | Drives wind — see Atmosphere section |
+| `mist` | `float32 [0..7]` | Airborne water quantity (continuous float, no integer rounding) |
+| `atmo_temp` | `float32` (°C) | Atmospheric temperature |
 
 ---
 
@@ -118,6 +132,13 @@ Each cell is defined by a set of static properties and layered data.
 Type : `None` | `Lichens` | `Grass` | `Shrubs` | `Trees`
 
 Each level implies all lower levels are present (e.g. `Shrubs` implies `Grass` and `Lichens`).
+
+When a cell is flooded (ground_water ≥ flooding_threshold), only `Lichens` can survive (displayed as algae).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `vegetation` | `uint8 [0..4]` | Current vegetation level |
+| `veg_tick_counter` | `uint16` | Ticks since last vegetation change |
 
 ---
 
@@ -140,23 +161,35 @@ Examples : *Desert, Swamp, Rainforest, Lake, Tundra…*
 
 #### Temperature
 
-- Ground temperature partially radiates each tick :
-  - to neighbouring cells, proportionally to cell type thermal inertia ;
-  - to the atmosphere above.
+Conservation : total energy (ground_temp + atmo_temp summed over all cells) is constant.
+
+Each tick, a **net flux** is computed between ground and atmosphere :
+```
+net_flux = exchange_rate × (ground_temp − atmo_temp)
+```
+What leaves the ground enters the atmosphere exactly — no energy created.
+
+Ground also radiates to its 4 neighbours proportionally to thermal inertia (conservative by construction).
 
 #### Water
 
-Fixed world total quantity (conserved).
+Fixed world total quantity (conserved). Total = `ground_water.sum() + mist.sum() × MIST_UNIT + vegetation_water.sum()`
 
-- **Evaporation** : if ground temperature exceeds `evap_temp_threshold` and ground water > 0, a fraction (`evap_rate`) transfers to mist
-- **Runoff** : if a cell is higher than its neighbours, ground water flows to them proportionally to altitude delta ; `sand` and `soil` retain a minimum amount (`retention_min`)
-- **Flooding** : if `ground_water` exceeds `flooding_threshold` (varies by base type), the cell becomes a *Lake* :
-  - generates nutriments for its neighbours each tick ;
-  - if water runs off to neighbours, some nutriments travel with it.
+- **Evaporation** : if ground temperature > `evap_temp_threshold` and ground water > 0, a fraction transfers to mist (float, no rounding loss)
+- **Runoff** : driven by **hydraulic altitude** rather than terrain altitude alone :
+  ```
+  effective_alt = altitude + ground_water × water_to_altitude
+  ```
+  Water only flows toward cells where the water *surface* is lower — prevents overflow into already-flooded cells.
+  Sand and soil retain a minimum amount (`retention_min`).
+- **Flooding** : if `ground_water` ≥ `flooding_threshold` (varies by base type), the cell is a *Lake* :
+  - Displayed in blue on the map
+  - Generates nutriments for neighbours each tick
+  - Runoff from lakes carries nutriments downstream
 
 #### Nutriments
 
-Each tick, a fraction (`nutriment_diffusion_rate`) of a cell's nutriments diffuses to its direct neighbours.
+Each tick, a fraction (`nutriment_diffusion_rate`) of a cell's nutriments diffuses to its 4 direct neighbours.
 *(Simulates microfauna movement — insects, worms, etc.)*
 
 | Sources | Sinks |
@@ -166,19 +199,32 @@ Each tick, a fraction (`nutriment_diffusion_rate`) of a cell's nutriments diffus
 
 #### Vegetation
 
-Vegetation evolves at most once every `vegetation_growth_period` ticks (not every tick — growth is slow relative to daily simulation steps).
+Vegetation evolves at most once every `vegetation_growth_period` ticks. When a change occurs (growth or devolution), the counter resets to a **random value in [0, growth_period/2]** to desynchronise patches.
+
+**Fertility modulation** : the static `fertility` field adjusts thresholds locally :
+- `effective_water_min = water_min − fertility × 0.10`
+- `effective_nut_min = nut_min − fertility × 5`
+- Cells with `fertility ≥ 0.6` are immune to devolution (stress tolerance)
+
+**Growth conditions** (all must be met) :
 
 | Condition | Effect |
 |-----------|--------|
-| `ground_water` ≥ `veg_water_min` AND `temp_min` ≤ temperature ≤ `temp_max` AND `nutriments` ≥ `veg_nutriments_min` | Evolves upward (e.g. Lichens → Grass → Shrubs → Trees) |
-| `ground_water` < `veg_water_min` OR temperature out of range | Devolves downward (e.g. Trees → Shrubs) |
+| `ground_water` ≥ `eff_water_min` AND `temp_min` ≤ temp ≤ `temp_max` AND `nutriments` ≥ `eff_nut_min` AND timer ready | Evolves upward (Lichens → Grass → Shrubs → Trees) |
+| Water or temp out of range AND not immune | Devolves downward |
+
+**Flooding rules** (applied every tick, immediate) :
+- Flooded cells : `veg > Lichens` → forced devolution by one step per tick toward Lichens
+- Lichen on flooded cells survives and is displayed as algae (~) in the UI
+
+**Bank rules** (cells adjacent to a flooded cell) :
+- Adjacent to lake, `base_type == bare` → maximum vegetation = Grass
+- Adjacent to lake, `base_type == sand` → maximum vegetation = Shrubs
 
 Additional rules :
-- Growth consumes `growth_cost_water` and `growth_cost_nutriments`, stored within the plant
-- **Lichens** : grow from nothing (no nutriments required) ; release nutriments when destroyed
-- Vegetation stores water (`water_stored_per_level` per vegetation level)
-- Devolution releases nutriments (`devolution_nutriments_release`) to ground and water (`devolution_water_release`) to atmosphere
-- Vegetation reduces cell albedo
+- Growth consumes `growth_cost_water` (moved to `vegetation_water`) and `growth_cost_nutriments`
+- **Lichens** : grow from nothing (no nutriments required) ; release extra nutriments when destroyed
+- Devolution returns all `vegetation_water` to ground + releases nutriments
 
 ---
 
@@ -186,120 +232,49 @@ Additional rules :
 
 #### Pressure
 
-Atmospheric pressure is the primary driver of wind. Computed each tick :
-
+Computed each tick :
 ```
 pressure(cell) = P_base
-               - k_temp × atmo_temperature(cell)
+               − k_temp × (atmo_temp(cell) − temp_ref)
                + k_alt  × altitude(cell)
 ```
+- `temp_ref` : reference temperature at which pressure = P_base
+- Hot air (above temp_ref) → low pressure ; cold air → high pressure
+- High altitude → low pressure
 
-- **Hot air → low pressure** (air expands and rises)
-- **High altitude → low pressure** (less air mass above)
+A `pressure_damping` coefficient smooths convergence and prevents numerical oscillation.
 
-Both effects lower pressure simultaneously for a hot lowland ; they partially cancel for a cold highland — generating varied wind patterns.
-
-A `pressure_damping` coefficient prevents numerical oscillation.
+**Latitudinal gradient** : initial temperatures follow `cos(π·v)`, creating a persistent warm/cold banding that drives baseline wind circulation. This gradient is maintained by the temperature phase each tick.
 
 #### Wind
 
-Derived from the pressure gradient — not stored, computed each tick :
-
+Derived from pressure gradient — not stored, computed each tick :
 ```
-wind(A → B) = k_wind × (pressure(A) - pressure(B))
+wind(A → B) = k_wind × (pressure(A) − pressure(B))
 ```
+Wind transports mist and atmospheric temperature to neighbours via antisymmetric net flux (exact conservation).
 
-Each tick, wind transports the cell's atmospheric content (mist and temperature) to neighbouring cells, proportionally to wind strength.
-
-*(Wider scale rules such as vortices and Coriolis effect — deferred)*
+*(Vortices, Coriolis effect — deferred)*
 
 #### Rain
 
-If `atmo_temperature` < `rain_temp_threshold` AND `mist` ≥ `rain_humidity_threshold` :
+If `atmo_temp` < `rain_temp_threshold` AND `mist` ≥ `rain_humidity_threshold` :
 - A fraction (`rain_rate`) of mist transfers to ground water.
 
-#### Temperature
-- Atmospheric temperature partially radiates to the ground.
+Excess mist above 7.0 (from atmospheric transport) precipitates immediately to ground water.
 
 ---
 
 ### Entities *(not implemented yet)*
 
-- Animals feeding on vegetation and/or each other ;
-- Animals can move to an adjacent cell each tick.
+- Animals feeding on vegetation and/or each other
+- Animals can move to an adjacent cell each tick
 
 ---
 
 ## Configuration reference
 
-All tunable parameters are stored in a JSON config file. Default values are indicative and subject to balancing.
-
-```json
-{
-  "world": {
-    "grid_width": 1024,
-    "grid_height": 512,
-    "total_water": 2.0,
-    "total_energy": 50000
-  },
-
-  "base_types": {
-    "bare": { "thermal_inertia": 0.8, "water_retention": 0.0, "flooding_threshold": 0.2, "albedo_base": 0.40 },
-    "sand": { "thermal_inertia": 0.3, "water_retention": 0.05, "flooding_threshold": 0.5, "albedo_base": 0.60 },
-    "soil": { "thermal_inertia": 0.5, "water_retention": 0.15, "flooding_threshold": 0.8, "albedo_base": 0.30 }
-  },
-
-  "temperature": {
-    "ground_to_neighbour_rate": 0.05,
-    "ground_to_atmosphere_rate": 0.10,
-    "atmosphere_to_ground_rate": 0.08
-  },
-
-  "atmosphere": {
-    "P_base": 1.0,
-    "k_temp": 0.3,
-    "k_alt": 0.2,
-    "k_wind": 0.5,
-    "pressure_damping": 0.1,
-    "wind_transport_rate": 0.4
-  },
-
-  "water": {
-    "evap_temp_threshold": 25.0,
-    "evap_rate": 0.05,
-    "runoff_rate": 0.3
-  },
-
-  "rain": {
-    "rain_temp_threshold": 5.0,
-    "rain_humidity_threshold": 5,
-    "rain_rate": 0.6
-  },
-
-  "nutriments": {
-    "diffusion_rate": 0.02,
-    "lake_generation_rate": 3,
-    "runoff_transport_rate": 0.1
-  },
-
-  "vegetation": {
-    "growth_period_ticks": 30,
-    "water_min": 0.2,
-    "temp_min": 0.0,
-    "temp_max": 40.0,
-    "nutriments_min": 10,
-    "growth_cost_water": 0.1,
-    "growth_cost_nutriments": 5,
-    "water_stored_per_level": 0.05,
-    "devolution_nutriments_release": 8,
-    "devolution_water_release": 0.05
-  },
-
-  "albedo": {
-    "vegetation_reduction_per_level": 0.05
-  }
-}
-```
+All tunable parameters are stored in `config/default.json`. Keys prefixed `_comment` are documentation only and ignored by the simulation. See `default.json` for per-parameter descriptions.
 
 ---
 
@@ -310,3 +285,6 @@ All tunable parameters are stored in a JSON config file. Default values are indi
 - **Erosion** : altitude smoothing over time based on water flow
 - **Large-scale atmospheric dynamics** : vortices, Coriolis effect
 - **Geological events** : volcanoes, particle emissions
+- **3D torus view** : ModernGL, instanced vegetation models
+- **Save / load** : npz archive + metadata JSON
+- **Entities** : animals, feeding, movement
