@@ -10,6 +10,7 @@ Layers (bottom to top) :
   3. Veg icons    : drawn per cell — toggle 4
                     submerged lichen displayed as algae (~)
   4. Mist overlay : white veil, opacity = mist level — toggle 6
+  5. Inspect panel: cell info following mouse cursor — toggle I
 
 Controls :
   SPACE       : step one tick (when paused)
@@ -20,8 +21,9 @@ Controls :
   2           : toggle temperature overlay
   3           : toggle pressure overlay
   4           : toggle vegetation icons
-  5           : toggle altitude overlay (static)
+  5           : toggle altitude overlay (spectral, exclusive)
   6           : toggle mist / cloud overlay
+  I           : toggle inspect mode
   Mouse wheel : zoom in/out
   RMB / MMB   : pan
   ESC / Q     : quit
@@ -45,7 +47,7 @@ COLOR_SOIL      = (120,  85,  50)
 COLOR_BG        = (20,  20,  20)
 
 COLOR_LICHEN    = (80,  110,  60)
-COLOR_ALGAE     = (50,  170,  140)   # teal blue-green for submerged lichen
+COLOR_ALGAE     = (50,  170,  140)
 COLOR_GRASS     = (120, 180,  80)
 COLOR_SHRUB     = (60,  130,  60)
 COLOR_TREE_C    = (30,   90,  40)
@@ -62,15 +64,23 @@ ZOOM_MIN        = 1
 ZOOM_MAX        = 32
 ZOOM_DEFAULT    = 4
 INFO_FONT_SIZE  = 14
+INSPECT_FONT_SIZE = 13
 
 SPEED_STEPS     = [0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 SPEED_DEFAULT   = 2
 
+# Overlay modes (exclusive)
 OV_NONE     = 0
 OV_WATER    = 1
 OV_TEMP     = 2
 OV_PRESSURE = 3
 OV_ALTITUDE = 5
+
+VEG_NAMES = {
+    VEG_NONE: "None", VEG_LICHENS: "Lichens",
+    VEG_GRASS: "Grass", VEG_SHRUBS: "Shrubs", VEG_TREES: "Trees",
+}
+BASE_NAMES = {BASE_BARE: "Bare", BASE_SAND: "Sand", BASE_SOIL: "Soil"}
 
 
 # ---------------------------------------------------------------------------
@@ -89,36 +99,70 @@ def _normalise(arr: np.ndarray) -> np.ndarray:
     return ((arr - mn) / (mx - mn)).astype(np.float32)
 
 
+def _spectral_colour(t: np.ndarray) -> np.ndarray:
+    """
+    Map t in [0..1] to a visible spectrum gradient :
+      0.0 → violet  (148,  0, 211)
+      0.2 → blue    (  0,  0, 255)
+      0.4 → cyan    (  0, 255, 255)
+      0.6 → green   (  0, 255,   0)
+      0.8 → yellow  (255, 255,   0)
+      1.0 → red     (255,   0,   0)
+    """
+    stops = [
+        (0.0, (148,   0, 211)),
+        (0.2, (  0,   0, 255)),
+        (0.4, (  0, 255, 255)),
+        (0.6, (  0, 255,   0)),
+        (0.8, (255, 255,   0)),
+        (1.0, (255,   0,   0)),
+    ]
+
+    rgb = np.zeros((*t.shape, 3), dtype=np.float32)
+    for i in range(len(stops) - 1):
+        t0, c0 = stops[i]
+        t1, c1 = stops[i + 1]
+        mask = (t >= t0) & (t <= t1)
+        local_t = np.where(mask, (t - t0) / (t1 - t0), 0.0)
+        for ch in range(3):
+            rgb[:, :, ch] += mask * (c0[ch] * (1 - local_t) + c1[ch] * local_t)
+
+    return rgb.clip(0, 255).astype(np.uint8)
+
+
 # ---------------------------------------------------------------------------
 # RGB builders
 # ---------------------------------------------------------------------------
 
+COLOR_LAKE = (40, 100, 200)   # deep blue for flooded cells
+
+
 def _build_base_rgb(world: World) -> np.ndarray:
+    """
+    Dynamic base layer — recomputed each frame.
+    Flooded cells (lakes) are shown in blue regardless of base type.
+    """
     h, w = world.height, world.width
-    rgb = np.zeros((h, w, 3), dtype=np.uint8)
+    rgb  = np.zeros((h, w, 3), dtype=np.uint8)
     rgb[world.base_type == 0] = COLOR_BARE
     rgb[world.base_type == 1] = COLOR_SAND
     rgb[world.base_type == 2] = COLOR_SOIL
+
+    base_cfg     = world.config["base_types"]
+    bt           = world.base_type
+    flood_thresh = np.empty((h, w), dtype=np.float32)
+    flood_thresh[bt == BASE_BARE] = base_cfg["bare"]["flooding_threshold"]
+    flood_thresh[bt == BASE_SAND] = base_cfg["sand"]["flooding_threshold"]
+    flood_thresh[bt == BASE_SOIL] = base_cfg["soil"]["flooding_threshold"]
+
+    rgb[world.front.ground_water >= flood_thresh] = COLOR_LAKE
     return rgb
 
 
 def _build_altitude_rgb(world: World) -> np.ndarray:
-    t   = world.altitude.astype(np.float32)
-    rgb = np.zeros((world.height, world.width, 3), dtype=np.uint8)
-
-    mask1 = t < 0.4
-    t1    = (t / 0.4).clip(0, 1)
-    rgb[mask1] = _lerp_colour((20, 60, 160), (80, 140, 60), t1)[mask1]
-
-    mask2 = (t >= 0.4) & (t < 0.7)
-    t2    = ((t - 0.4) / 0.3).clip(0, 1)
-    rgb[mask2] = _lerp_colour((80, 140, 60), (130, 100, 60), t2)[mask2]
-
-    mask3 = t >= 0.7
-    t3    = ((t - 0.7) / 0.3).clip(0, 1)
-    rgb[mask3] = _lerp_colour((130, 100, 60), (240, 240, 240), t3)[mask3]
-
-    return rgb
+    """Spectral altitude map : violet (low) → red (high)."""
+    t = world.altitude.astype(np.float32)   # already [0..1]
+    return _spectral_colour(t)
 
 
 def _water_rgb(world: World) -> np.ndarray:
@@ -137,7 +181,6 @@ def _pressure_rgb(world: World) -> np.ndarray:
 
 
 def _compute_flooded(world: World) -> np.ndarray:
-    """Return boolean mask : True where ground_water >= flooding_threshold."""
     base_cfg = world.config["base_types"]
     bt = world.base_type
     thresh = np.empty((world.height, world.width), dtype=np.float32)
@@ -161,9 +204,9 @@ def _build_mist_surface(world: World, view_w: int, view_h: int,
     if mist_crop.size == 0:
         return None
 
-    alpha    = (mist_crop.astype(np.float32) / 7.0 * MIST_ALPHA_MAX).astype(np.uint8)
+    alpha     = (mist_crop.astype(np.float32) / 7.0 * MIST_ALPHA_MAX).astype(np.uint8)
     h_crop, w_crop = mist_crop.shape
-    surf     = pygame.Surface((w_crop, h_crop), pygame.SRCALPHA)
+    surf      = pygame.Surface((w_crop, h_crop), pygame.SRCALPHA)
     surf.fill((255, 255, 255, 0))
     alpha_arr = pygame.surfarray.pixels_alpha(surf)
     alpha_arr[:, :] = alpha.transpose(1, 0)
@@ -182,10 +225,6 @@ def _build_mist_surface(world: World, view_w: int, view_h: int,
 def _draw_veg_icon(surface: pygame.Surface, veg_level: int,
                    px: int, py: int, size: int,
                    submerged: bool = False) -> None:
-    """
-    Draw a vegetation icon for one cell.
-    submerged=True + VEG_LICHENS → draw algae ~ icon in teal.
-    """
     if veg_level == VEG_NONE or size < 2:
         return
 
@@ -195,7 +234,6 @@ def _draw_veg_icon(surface: pygame.Surface, veg_level: int,
 
     if veg_level == VEG_LICHENS:
         if submerged:
-            # Algae : sinusoidal ~ wave in teal
             if size >= 4:
                 w     = max(4, s * 2 // 3)
                 amp   = max(1, s // 5)
@@ -241,6 +279,82 @@ def _draw_veg_icon(surface: pygame.Surface, veg_level: int,
 
 
 # ---------------------------------------------------------------------------
+# Inspect panel
+# ---------------------------------------------------------------------------
+
+def _draw_inspect(surface: pygame.Surface, world: World,
+                  mouse_x: int, mouse_y: int,
+                  cam_x: float, cam_y: float, zoom: int,
+                  font: pygame.font.Font,
+                  is_flooded: np.ndarray) -> None:
+    """
+    Draw a compact info panel near the mouse cursor showing cell data.
+    Panel repositions to stay within screen bounds.
+    """
+    sw, sh = surface.get_size()
+
+    # World cell under cursor
+    cx = int(cam_x + mouse_x / zoom)
+    cy = int(cam_y + mouse_y / zoom)
+
+    if not (0 <= cx < world.width and 0 <= cy < world.height):
+        return
+
+    f   = world.front
+    bt  = int(world.base_type[cy, cx])
+    alt = float(world.altitude[cy, cx])
+    gw  = float(f.ground_water[cy, cx])
+    gt  = float(f.ground_temp[cy, cx])
+    at  = float(f.atmo_temp[cy, cx])
+    ms  = float(f.mist[cy, cx])
+    pr  = float(f.pressure[cy, cx])
+    veg = int(f.vegetation[cy, cx])
+    fer = float(world.fertility[cy, cx])
+    nut = int(f.nutriments[cy, cx])
+    fld = bool(is_flooded[cy, cx])
+
+    flood_str = "  Lake" if fld else ""
+    lines = [
+        f"Cell [{cx}, {cy}]  {BASE_NAMES.get(bt, '?')}",
+        f"Alt  : {alt:.3f}",
+        f"GW   : {gw:.3f}{flood_str}",
+        f"Temp : {gt:.1f}°C / {at:.1f}°C atmo",
+        f"Mist : {ms:.2f}",
+        f"Press: {pr:.4f} bar",
+        f"Veg  : {VEG_NAMES.get(veg, '?')}",
+        f"Nutr : {nut}",
+        f"Fert : {fer:+.3f}",
+    ]
+
+    pad    = 6
+    line_h = font.get_linesize()
+    panel_w = max(font.size(l)[0] for l in lines) + pad * 2
+    panel_h = len(lines) * line_h + pad * 2
+
+    # Position panel : prefer bottom-right of cursor, flip if near edge
+    px = mouse_x + 14
+    py = mouse_y + 14
+    if px + panel_w > sw:
+        px = mouse_x - panel_w - 6
+    if py + panel_h > sh - INFO_BAR_H:
+        py = mouse_y - panel_h - 6
+
+    # Background
+    bg = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    bg.fill((10, 10, 10, 200))
+    surface.blit(bg, (px, py))
+
+    # Border
+    pygame.draw.rect(surface, (100, 100, 100), (px, py, panel_w, panel_h), 1)
+
+    # Text
+    for i, line in enumerate(lines):
+        color = (220, 220, 220) if i > 0 else (255, 220, 80)
+        txt = font.render(line, True, color)
+        surface.blit(txt, (px + pad, py + pad + i * line_h))
+
+
+# ---------------------------------------------------------------------------
 # Crop + scale helper
 # ---------------------------------------------------------------------------
 
@@ -276,13 +390,14 @@ def run(world: World) -> None:
         pygame.RESIZABLE
     )
     pygame.display.set_caption(WINDOW_TITLE)
-    clock = pygame.time.Clock()
-    font  = pygame.font.SysFont("monospace", INFO_FONT_SIZE)
+    clock        = pygame.time.Clock()
+    font         = pygame.font.SysFont("monospace", INFO_FONT_SIZE)
+    inspect_font = pygame.font.SysFont("monospace", INSPECT_FONT_SIZE)
 
     world_w      = world.width
     world_h      = world.height
-    base_rgb     = _build_base_rgb(world)
-    altitude_rgb = _build_altitude_rgb(world)
+    #base_rgb     = _build_base_rgb(world)
+    altitude_rgb = _build_altitude_rgb(world)   # spectral, static
 
     zoom  = ZOOM_DEFAULT
     cam_x = 0.0
@@ -297,6 +412,7 @@ def run(world: World) -> None:
     overlay_mode = OV_NONE
     show_veg     = True
     show_mist    = True
+    show_inspect = False
 
     paused     = False
     speed_idx  = SPEED_DEFAULT
@@ -316,14 +432,16 @@ def run(world: World) -> None:
         view_w  = sw
         view_h  = sh - INFO_BAR_H
 
+        is_flooded = _compute_flooded(world)
+
         # Base layer
         base_surf, ox, oy = _crop_and_scale(
-            base_rgb, cam_x, cam_y, zoom, view_w, view_h, world_w, world_h)
+    _build_base_rgb(world), cam_x, cam_y, zoom, view_w, view_h, world_w, world_h)
         screen.fill(COLOR_BG, (0, 0, sw, view_h))
         if base_surf:
             screen.blit(base_surf, (ox, oy))
 
-        # Data overlay
+        # Data overlay (exclusive)
         if overlay_mode != OV_NONE:
             if overlay_mode == OV_WATER:
                 ov_rgb = _water_rgb(world)
@@ -331,13 +449,15 @@ def run(world: World) -> None:
                 ov_rgb = _temp_rgb(world)
             elif overlay_mode == OV_PRESSURE:
                 ov_rgb = _pressure_rgb(world)
-            else:
+            else:   # OV_ALTITUDE — spectral, pre-built
                 ov_rgb = altitude_rgb
 
             ov_surf, ox2, oy2 = _crop_and_scale(
                 ov_rgb, cam_x, cam_y, zoom, view_w, view_h, world_w, world_h)
             if ov_surf:
-                ov_surf.set_alpha(OVERLAY_ALPHA)
+                # Altitude overlay is opaque (replaces base), others are semi-transparent
+                if overlay_mode != OV_ALTITUDE:
+                    ov_surf.set_alpha(OVERLAY_ALPHA)
                 screen.blit(ov_surf, (ox2, oy2))
 
         # Vegetation icons
@@ -349,8 +469,7 @@ def run(world: World) -> None:
             cell_x1 = min(cell_x0 + cells_x, world_w)
             cell_y1 = min(cell_y0 + cells_y, world_h)
 
-            veg        = world.front.vegetation
-            is_flooded = _compute_flooded(world)
+            veg = world.front.vegetation
 
             for cy in range(cell_y0, cell_y1):
                 for cx in range(cell_x0, cell_x1):
@@ -370,6 +489,13 @@ def run(world: World) -> None:
                 mist_surf, mx, my = result
                 screen.blit(mist_surf, (mx, my))
 
+        # Inspect panel
+        if show_inspect:
+            mx, my = pygame.mouse.get_pos()
+            if my < view_h:   # only when cursor is on the map
+                _draw_inspect(screen, world, mx, my, cam_x, cam_y, zoom,
+                              inspect_font, is_flooded)
+
         # Info bar
         info_rect = pygame.Rect(0, sh - INFO_BAR_H, sw, INFO_BAR_H)
         pygame.draw.rect(screen, (20, 20, 20), info_rect)
@@ -379,17 +505,19 @@ def run(world: World) -> None:
             OV_TEMP: "temp", OV_PRESSURE: "pressure",
             OV_ALTITUDE: "altitude",
         }
-        speed_str = f"{SPEED_STEPS[speed_idx]:.2f}".rstrip('0').rstrip('.') + " t/s"
-        state_str = "PAUSED" if paused else speed_str
+        speed_str   = f"{SPEED_STEPS[speed_idx]:.2f}".rstrip('0').rstrip('.') + " t/s"
+        state_str   = "PAUSED" if paused else speed_str
+        inspect_str = "on" if show_inspect else "off"
 
         info_str = (
             f"Tick {world.tick_count:5d}  |  "
             f"Zoom {zoom:2d}x  |  [{state_str}]  "
             f"Overlay:{ov_names[overlay_mode]}  "
             f"Veg:{'on' if show_veg else 'off'}  "
-            f"Mist:{'on' if show_mist else 'off'}  |  "
+            f"Mist:{'on' if show_mist else 'off'}  "
+            f"Inspect:{inspect_str}  |  "
             f"[SPC]step [A]pause [PgUp/Dn]speed "
-            f"[1]water [2]temp [3]press [4]veg [5]alt [6]mist  [ESC]quit"
+            f"[1]water [2]temp [3]press [4]veg [5]alt [6]mist [I]inspect  [ESC]quit"
         )
         text_surf = font.render(info_str, True, (180, 180, 180))
         screen.blit(text_surf, (8, sh - INFO_BAR_H + 4))
@@ -429,6 +557,8 @@ def run(world: World) -> None:
                     overlay_mode = OV_NONE if overlay_mode == OV_ALTITUDE else OV_ALTITUDE
                 elif event.key == pygame.K_6:
                     show_mist = not show_mist
+                elif event.key == pygame.K_i:
+                    show_inspect = not show_inspect
 
             elif event.type == pygame.MOUSEWHEEL:
                 mx, my = pygame.mouse.get_pos()
