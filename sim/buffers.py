@@ -2,6 +2,8 @@
 buffers.py
 Defines the WorldBuffers dataclass : one numpy array per cell field.
 The World object maintains two instances (front / back) for double-buffering.
+
+mist is now float32 [0..7] — continuous, no accumulator needed.
 """
 
 import numpy as np
@@ -16,7 +18,6 @@ def _zeros(shape: tuple, dtype) -> np.ndarray:
 class WorldBuffers:
     """
     All mutable per-cell data, stored as numpy arrays of shape (height, width).
-    One WorldBuffers instance = one complete snapshot of the world state.
     """
 
     height: int
@@ -30,14 +31,13 @@ class WorldBuffers:
 
     # --- Atmospheric layer ---
     pressure:           np.ndarray = field(init=False)  # float32 (bar)
-    mist:               np.ndarray = field(init=False)  # uint8   [0..7]
-    mist_accumulator:   np.ndarray = field(init=False)  # float32 [0..MIST_UNIT)
+    mist:               np.ndarray = field(init=False)  # float32 [0..7]
     atmo_temp:          np.ndarray = field(init=False)  # float32 (°C)
 
     # --- Vegetation layer ---
-    vegetation:         np.ndarray = field(init=False)  # uint8  [0..4]
-    veg_tick_counter:   np.ndarray = field(init=False)  # uint16 (ticks since last change)
-    vegetation_water:   np.ndarray = field(init=False)  # float32 water stored in plants
+    vegetation:         np.ndarray = field(init=False)  # uint8   [0..4]
+    veg_tick_counter:   np.ndarray = field(init=False)  # uint16
+    vegetation_water:   np.ndarray = field(init=False)  # float32
 
     def __post_init__(self):
         shape = (self.height, self.width)
@@ -48,8 +48,7 @@ class WorldBuffers:
         self.albedo             = _zeros(shape, np.float32)
 
         self.pressure           = _zeros(shape, np.float32)
-        self.mist               = _zeros(shape, np.uint8)
-        self.mist_accumulator   = _zeros(shape, np.float32)
+        self.mist               = _zeros(shape, np.float32)
         self.atmo_temp          = _zeros(shape, np.float32)
 
         self.vegetation         = _zeros(shape, np.uint8)
@@ -57,14 +56,12 @@ class WorldBuffers:
         self.vegetation_water   = _zeros(shape, np.float32)
 
     def copy_from(self, other: "WorldBuffers") -> None:
-        """Copy all arrays from another WorldBuffers into this one (in-place)."""
         np.copyto(self.ground_water,        other.ground_water)
         np.copyto(self.nutriments,          other.nutriments)
         np.copyto(self.ground_temp,         other.ground_temp)
         np.copyto(self.albedo,              other.albedo)
         np.copyto(self.pressure,            other.pressure)
         np.copyto(self.mist,                other.mist)
-        np.copyto(self.mist_accumulator,    other.mist_accumulator)
         np.copyto(self.atmo_temp,           other.atmo_temp)
         np.copyto(self.vegetation,          other.vegetation)
         np.copyto(self.veg_tick_counter,    other.veg_tick_counter)

@@ -8,7 +8,7 @@ import numpy as np
 from sim.buffers import WorldBuffers
 from sim.phases.evaporation import MIST_UNIT
 
-# Vegetation levels — used as readable constants throughout the codebase
+# Vegetation levels
 VEG_NONE    = 0
 VEG_LICHENS = 1
 VEG_GRASS   = 2
@@ -20,20 +20,20 @@ BASE_BARE   = 0
 BASE_SAND   = 1
 BASE_SOIL   = 2
 
+# Set to True to enable per-phase water diagnostic
+WATER_DEBUG = True
+
+
+def _w(buf: WorldBuffers) -> float:
+    """Total water in a buffer."""
+    return (
+        float(buf.ground_water.sum())
+        + float(buf.mist.sum()) * MIST_UNIT
+        + float(buf.vegetation_water.sum())
+    )
+
 
 class World:
-    """
-    Central object for the simulation.
-
-    Static data (never modified after generation) :
-        altitude, base_type, uv
-
-    Mutable data (updated every tick) :
-        Stored in two WorldBuffers instances (front / back).
-        The simulation writes to `back`, the renderer reads from `front`.
-        After each tick, front and back are swapped.
-    """
-
     def __init__(self, config: dict):
         self.config = config
 
@@ -44,41 +44,23 @@ class World:
 
         shape = (self.height, self.width)
 
-        # --- Static arrays ---
-        self.altitude   = np.zeros(shape, dtype=np.float32)
-        self.base_type  = np.zeros(shape, dtype=np.uint8)
+        self.altitude  = np.zeros(shape, dtype=np.float32)
+        self.base_type = np.zeros(shape, dtype=np.uint8)
 
-        # UV : normalized (u, v) coordinates for each cell
-        # uv[y, x, 0] = u = x / width   (horizontal, 0..1)
-        # uv[y, x, 1] = v = y / height  (vertical,   0..1)
         self.uv = np.zeros((self.height, self.width, 2), dtype=np.float32)
         xs = np.linspace(0.0, 1.0, self.width,  endpoint=False, dtype=np.float32)
         ys = np.linspace(0.0, 1.0, self.height, endpoint=False, dtype=np.float32)
-        self.uv[:, :, 0] = xs[np.newaxis, :]   # u varies along x
-        self.uv[:, :, 1] = ys[:, np.newaxis]   # v varies along y
+        self.uv[:, :, 0] = xs[np.newaxis, :]
+        self.uv[:, :, 1] = ys[:, np.newaxis]
 
-        # --- Double buffer ---
-        self.front  = WorldBuffers(self.height, self.width)
-        self.back   = WorldBuffers(self.height, self.width)
-
-    # ------------------------------------------------------------------
-    # Buffer management
-    # ------------------------------------------------------------------
+        self.front = WorldBuffers(self.height, self.width)
+        self.back  = WorldBuffers(self.height, self.width)
 
     def swap_buffers(self) -> None:
-        """Swap front and back buffers (pointer swap, no data copy)."""
         self.front, self.back = self.back, self.front
 
     def sync_back_from_front(self) -> None:
-        """
-        Copy front into back at the start of a tick, so that phases
-        which only partially update the world start from a consistent state.
-        """
         self.back.copy_from(self.front)
-
-    # ------------------------------------------------------------------
-    # Tick
-    # ------------------------------------------------------------------
 
     def tick(self) -> None:
         from sim.phases import (
@@ -87,9 +69,22 @@ class World:
         )
 
         self.sync_back_from_front()
+        w0 = _w(self.front) if WATER_DEBUG else 0.0
+
         temperature.step(self);  self.swap_buffers(); self.sync_back_from_front()
         pressure.step(self);     self.swap_buffers(); self.sync_back_from_front()
+
+        # --- Vegetation with detailed diagnostic ---
+        w_before_veg = _w(self.front) if WATER_DEBUG else 0.0
         vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        if WATER_DEBUG:
+            delta_veg = _w(self.front) - w_before_veg
+            if abs(delta_veg) > 0.1:
+                print(f"  T{self.tick_count:5d} vegetation : {delta_veg:+.4f}  "
+                      f"gw={self.front.ground_water.sum():.2f}  "
+                      f"mist={self.front.mist.sum()*MIST_UNIT:.2f}  "
+                      f"vegw={self.front.vegetation_water.sum():.2f}")
+
         nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
         evaporation.step(self);  self.swap_buffers(); self.sync_back_from_front()
         atmosphere.step(self);   self.swap_buffers(); self.sync_back_from_front()
@@ -98,25 +93,31 @@ class World:
 
         self.tick_count += 1
 
-    # ------------------------------------------------------------------
-    # Conservation checks (for validation during development)
-    # ------------------------------------------------------------------
+        # NaN guard
+        for name, arr in [
+            ("pressure",    self.front.pressure),
+            ("atmo_temp",   self.front.atmo_temp),
+            ("ground_temp", self.front.ground_temp),
+            ("mist",        self.front.mist),
+        ]:
+            if np.any(np.isnan(arr)):
+                print(f"Tick {self.tick_count} : NaN in {name} !")
+                break
 
     def total_water(self) -> float:
-        ground  = float(self.front.ground_water.sum())
-        atmo    = (float(self.front.mist.sum()) * MIST_UNIT
-                + float(self.front.mist_accumulator.sum()))
-        veg     = float(self.front.vegetation_water.sum())
-        return ground + atmo + veg
+        return (
+            float(self.front.ground_water.sum())
+            + float(self.front.mist.sum()) * MIST_UNIT
+            + float(self.front.vegetation_water.sum())
+        )
 
     def total_energy(self) -> float:
-        """Sum of all temperatures in the world. Should be approximately constant."""
-        ground  = float(self.front.ground_temp.sum())
-        atmo    = float(self.front.atmo_temp.sum())
-        return ground + atmo
+        return (
+            float(self.front.ground_temp.sum())
+            + float(self.front.atmo_temp.sum())
+        )
 
     def report(self) -> str:
-        """Return a one-line summary of the current world state."""
         return (
             f"Tick {self.tick_count:6d} | "
             f"Water {self.total_water():.2f} | "

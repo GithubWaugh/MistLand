@@ -2,8 +2,12 @@
 generation.py
 Generates the initial world state.
 
-Altitude is generated via a pure numpy tileable value noise
-with multiple octaves. No external noise library required.
+Altitude is generated via pure numpy tileable value noise.
+Temperature has a latitudinal gradient using cos(π·v) :
+  - v=0 (north) : warm
+  - v=0.5       : cold
+  - v=1 (south) : warm again (seamless on the torus)
+This creates a persistent pressure gradient that drives wind circulation.
 """
 
 import numpy as np
@@ -36,28 +40,16 @@ def generate(world: World, seed: int = 42) -> None:
 # ------------------------------------------------------------------
 
 def _hash2(ix: np.ndarray, iy: np.ndarray, seed: int) -> np.ndarray:
-    """
-    Fast integer hash for 2D lattice points.
-    All arithmetic done in uint32 to avoid overflow.
-    Returns float64 in [-1, 1].
-    """
-    # Cast to uint32 before any arithmetic
     ix = ix.astype(np.uint32)
     iy = iy.astype(np.uint32)
     s  = np.uint32(seed & 0xFFFFFFFF)
-
-    h = ix * np.uint32(1619) + iy * np.uint32(31337) + s * np.uint32(1013)
-    h = ((h >> np.uint32(13)) ^ h)
-    h = h * (h * h * np.uint32(15731) + np.uint32(789221)) + np.uint32(1376312589)
-
+    h  = ix * np.uint32(1619) + iy * np.uint32(31337) + s * np.uint32(1013)
+    h  = ((h >> np.uint32(13)) ^ h)
+    h  = h * (h * h * np.uint32(15731) + np.uint32(789221)) + np.uint32(1376312589)
     return (h.astype(np.float64) / np.float64(0xFFFFFFFF)) * 2.0 - 1.0
 
 
 def _value_noise_2d(h: int, w: int, freq: float, seed: int) -> np.ndarray:
-    """
-    Tileable 2D value noise on a (h, w) grid.
-    Seamlessly tiles on both axes via modular lattice coordinates.
-    """
     xs = np.linspace(0.0, freq, w, endpoint=False, dtype=np.float64)
     ys = np.linspace(0.0, freq, h, endpoint=False, dtype=np.float64)
     xg, yg = np.meshgrid(xs, ys)
@@ -71,8 +63,6 @@ def _value_noise_2d(h: int, w: int, freq: float, seed: int) -> np.ndarray:
 
     fx = xg - np.floor(xg)
     fy = yg - np.floor(yg)
-
-    # Smoothstep
     ux = fx * fx * (3.0 - 2.0 * fx)
     uy = fy * fy * (3.0 - 2.0 * fy)
 
@@ -90,15 +80,12 @@ def _value_noise_2d(h: int, w: int, freq: float, seed: int) -> np.ndarray:
 def _generate_altitude(world: World, seed: int) -> None:
     h, w = world.height, world.width
     alt  = np.zeros((h, w), dtype=np.float64)
-
     for i, (amplitude, freq_mult) in enumerate(OCTAVES):
         layer = _value_noise_2d(h, w, freq_mult, seed + i * 7919)
         alt  += amplitude * layer
-
     alt = gaussian_filter(alt, sigma=BLUR_SIGMA)
     alt -= alt.min()
     alt /= alt.max()
-
     world.altitude = alt.astype(np.float32)
 
 
@@ -122,31 +109,44 @@ def _distribute_water(world: World) -> None:
     total   = world.config["world"]["total_water"]
     h, w    = world.height, world.width
     n_cells = h * w
-
     weight  = 1.0 - world.altitude
     weight  = np.clip(weight, 0.01, None)
     weight /= weight.sum()
-
-    gw = (weight * total * n_cells).astype(np.float32)
-    world.front.ground_water = gw
+    world.front.ground_water = (weight * total * n_cells).astype(np.float32)
 
 
 # ------------------------------------------------------------------
-# Temperature
+# Temperature — latitudinal gradient + altitude correction
 # ------------------------------------------------------------------
 
 def _distribute_temperature(world: World) -> None:
-    alt      = world.altitude
-    cfg      = world.config["atmosphere"]
-    temp_min = 0.0
-    temp_max = 30.0
+    alt = world.altitude
+    cfg = world.config["atmosphere"]
 
-    ground_temp = (temp_max - (temp_max - temp_min) * alt).astype(np.float32)
-    atmo_temp   = (ground_temp - 5.0).astype(np.float32)
+    # Latitudinal gradient using v coordinate
+    # cos(π·v) : v=0 → +1 (warm), v=0.5 → -1 (cold), v=1 → +1 (warm)
+    # Seamlessly continuous on the torus
+    v          = world.uv[:, :, 1]                          # [0..1]
+    lat_factor = np.cos(np.pi * v).astype(np.float32)       # [-1..1]
+
+    temp_base   = 20.0   # °C at equator (v=0 and v=1)
+    temp_range  = 15.0   # amplitude of latitudinal variation
+    alt_lapse   = 15.0   # °C drop per unit altitude
+
+    # Ground temperature : warm bands at v=0/v=1, cold band at v=0.5
+    # Altitude makes peaks colder
+    ground_temp = (
+        temp_base
+        + temp_range * lat_factor
+        - alt_lapse  * alt
+    ).astype(np.float32)
+
+    atmo_temp = (ground_temp - 5.0).astype(np.float32)
 
     world.front.ground_temp = ground_temp
     world.front.atmo_temp   = atmo_temp
 
+    # Initial pressure from formula
     P_base   = cfg["P_base"]
     k_temp   = cfg["k_temp"]
     k_alt    = cfg["k_alt"]

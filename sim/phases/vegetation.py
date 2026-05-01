@@ -41,6 +41,7 @@ import numpy as np
 if TYPE_CHECKING:
     from sim.world import World
 
+from sim.phases.evaporation import MIST_UNIT
 from sim.world import VEG_NONE, VEG_LICHENS, VEG_GRASS, VEG_SHRUBS, VEG_TREES
 
 
@@ -67,7 +68,6 @@ def step(world: "World") -> None:
     gw       = f.ground_water.copy()
     veg_w    = f.vegetation_water.copy()
     nut      = f.nutriments.astype(np.int16)
-    macc     = f.mist_accumulator.copy()
     counter  = f.veg_tick_counter.copy()
 
     # --- Conditions ---
@@ -94,7 +94,12 @@ def step(world: "World") -> None:
         0.0
     ).astype(np.float32)
 
+    # Clamp : cannot consume more than available ground water
+    water_consumed = np.minimum(water_consumed, gw)
     gw    -= water_consumed
+    negative_gw = float(np.minimum(gw, 0.0).sum())
+    if abs(negative_gw) > 0.1:
+        print(f"  gw negative after growth: {negative_gw:.4f}")
     veg_w += water_consumed
 
     # Nutriments consumed (not Lichens)
@@ -134,7 +139,6 @@ def step(world: "World") -> None:
     gw    = np.maximum(gw, 0.0).astype(np.float32)
     veg_w = np.maximum(veg_w, 0.0).astype(np.float32)
     nut   = np.clip(nut,  0, 255).astype(np.int16)
-    macc  = np.maximum(macc, 0.0).astype(np.float32)
 
     # --- Update albedo ---
     albedo = np.empty((world.height, world.width), dtype=np.float32)
@@ -144,11 +148,29 @@ def step(world: "World") -> None:
     albedo -= veg.astype(np.float32) * alb_reduction
     albedo  = np.clip(albedo, 0.05, 1.0).astype(np.float32)
 
+    # Cas : cellule dévole avec veg_w > 0 mais niveau = VEG_LICHENS
+    lichen_devolves_with_water = devolves & (f.vegetation == VEG_LICHENS) & (veg_w > 0)
+    if lichen_devolves_with_water.any():
+        print(f"  lichens devolving with veg_w: {veg_w[lichen_devolves_with_water].sum():+.3f}")
+
+    # Cas : cellule pousse depuis None (lichen) sans coût mais veg_w déjà > 0
+    lichen_grows_with_water = grows & (f.vegetation == VEG_NONE) & (f.vegetation_water > 0)
+    if lichen_grows_with_water.any():
+        print(f"  none→lichen with existing veg_w: {f.vegetation_water[lichen_grows_with_water].sum():+.3f}")
+
+    delta_gw   = float((gw   - f.ground_water).sum())
+    delta_vegw = float((veg_w - f.vegetation_water).sum())
+    delta_mist = float((b.mist - f.mist).sum()) * MIST_UNIT if hasattr(b, 'mist') else 0
+    total = delta_gw + delta_vegw
+    if abs(total) > 0.1:
+        print(f"  veg internal: gw={delta_gw:+.2f} vegw={delta_vegw:+.2f} "
+            f"grows={int(grows.sum())} devolves={int(devolves.sum())}")
+
     # --- Apply to back buffer ---
     b.vegetation       = veg
     b.ground_water     = gw
     b.vegetation_water = veg_w
     b.nutriments       = nut.astype(np.uint8)
-    b.mist_accumulator = macc
+    #b.mist_accumulator = macc
     b.albedo           = albedo
     b.veg_tick_counter = counter
