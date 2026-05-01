@@ -42,7 +42,16 @@ from sim.world import VEG_NONE, VEG_LICHENS, VEG_GRASS, VEG_SHRUBS, VEG_TREES
 from sim.world import BASE_BARE, BASE_SAND, BASE_SOIL
 
 
-_NEIGHBOURS = [(0, 1), (0, -1), (1, -1), (1, 1)]
+_NEIGHBOURS = [
+    (-1,  0),  # north
+    ( 1,  0),  # south
+    ( 0,  1),  # east
+    ( 0, -1),  # west
+    (-1,  1),  # NE
+    (-1, -1),  # NW
+    ( 1,  1),  # SE
+    ( 1, -1),  # SW
+]
 
 
 def step(world: "World") -> None:
@@ -91,8 +100,8 @@ def step(world: "World") -> None:
 
     # Cells adjacent to at least one flooded cell
     has_flooded_neighbour = np.zeros((world.height, world.width), dtype=bool)
-    for axis, shift in _NEIGHBOURS:
-        has_flooded_neighbour |= np.roll(is_flooded, shift, axis=axis)
+    for dr, dc in _NEIGHBOURS:
+        has_flooded_neighbour |= np.roll(np.roll(is_flooded, dr, axis=0), dc, axis=1)
 
     # --- Vegetation cap from bank rules ---
     # Default : no cap (trees allowed)

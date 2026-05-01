@@ -25,10 +25,14 @@ if TYPE_CHECKING:
 
 
 _NEIGHBOURS = [
-    (0,  1),   # north
-    (0, -1),   # south
-    (1, -1),   # east
-    (1,  1),   # west
+    (-1,  0),  # north
+    ( 1,  0),  # south
+    ( 0,  1),  # east
+    ( 0, -1),  # west
+    (-1,  1),  # NE
+    (-1, -1),  # NW
+    ( 1,  1),  # SE
+    ( 1, -1),  # SW
 ]
 
 
@@ -65,11 +69,11 @@ def step(world: "World") -> None:
         f.nutriments.astype(np.int16) - total_outgoing.astype(np.int16)
     ).astype(np.int16)
 
-    for axis, shift in _NEIGHBOURS:
+    for dr, dc in _NEIGHBOURS:
         # Each neighbour receives units_per_neighbour from this cell
         # Deposit in neighbour (inverse roll)
         new_nutriments += np.roll(
-            units_per_neighbour.astype(np.int16), -shift, axis=axis
+            np.roll(units_per_neighbour.astype(np.int16), -dr, axis=0), -dc, axis=1
         )
 
     # Clamp to [0, 255] (safety)

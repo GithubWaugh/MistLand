@@ -34,10 +34,9 @@ def step(world: "World") -> None:
 
     # Water evaporating this tick
     evaporated = np.where(
-        can_evaporate,
-        evap_rate * f.ground_water,
-        0.0
-    ).astype(np.float32)
+    can_evaporate,
+    evap_rate * np.minimum(f.ground_water, 1.0),  # ← cap à 1.0
+    0.0 ).astype(np.float32)
 
     # Clamp to available water
     evaporated = np.minimum(evaporated, f.ground_water)

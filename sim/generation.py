@@ -30,9 +30,9 @@ OCTAVES = [
     (1.000,  2),    # continental scale  (2 repetitions across map)
     (0.600,  4),    # regional features
     (0.400,  8),    # mountain ranges
-    (0.250, 16),    # hills and valleys
-    (0.150, 32),    # local relief
-    (0.080, 64),    # fine texture
+    (0.250, 17),    # hills and valleys
+    (0.125, 34),    # local relief
+    (0.063, 70),    # fine texture
 ]
 
 BLUR_SIGMA = 0.8   # reduced from 1.5 — keeps more sharp detail
@@ -86,7 +86,7 @@ def _value_noise_2d(h: int, w: int, freq: int, seed: int) -> np.ndarray:
 
     freq must be an integer >= 2.
     """
-    assert freq >= 2, "freq must be >= 2 for seamless tiling"
+    assert isinstance(freq, int) and freq >= 2, "freq must be an integer >= 2 for seamless tiling"
     period = freq
 
     # Sample coordinates in [0, freq)
@@ -145,6 +145,7 @@ def _generate_base_type(world: World) -> None:
     bt  = np.zeros_like(alt, dtype=np.uint8)
     bt[alt >= 0.3] = BASE_SAND
     bt[alt >= 0.6] = BASE_SOIL
+    bt[alt >= 0.8] = BASE_BARE
     world.base_type = bt
 
 
@@ -181,9 +182,11 @@ def _distribute_water(world: World) -> None:
     h, w    = world.height, world.width
     n_cells = h * w
     weight  = 1.0 - world.altitude
-    weight  = np.clip(weight, 0.01, None)
+    weight  = np.clip(weight, 0.1, None)
     weight /= weight.sum()
     world.front.ground_water = (weight * total * n_cells).astype(np.float32)
+    # Water is distributed as mist instead of ground water, to give more dynamic range for evaporation in early ticks.
+    #world.front.mist = 8 * (weight * total * n_cells).astype(np.float32)
 
 
 # ------------------------------------------------------------------
@@ -195,7 +198,8 @@ def _distribute_temperature(world: World) -> None:
     cfg = world.config["atmosphere"]
 
     v          = world.uv[:, :, 1]
-    lat_factor = np.cos(np.pi * v).astype(np.float32)
+    # World is Toroïdal, so v=0 and v=1 are the same line → cos(2πv) is seamless.
+    lat_factor = 1 - np.cos(2 * np.pi * v).astype(np.float32)
 
     temp_base  = 20.0
     temp_range = 15.0

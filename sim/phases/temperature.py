@@ -34,14 +34,19 @@ if TYPE_CHECKING:
 
 
 _NEIGHBOURS = [
-    (0,  1),   # north
-    (0, -1),   # south
-    (1, -1),   # east
-    (1,  1),   # west
+    (-1,  0),  # north
+    ( 1,  0),  # south
+    ( 0,  1),  # east
+    ( 0, -1),  # west
+    (-1,  1),  # NE
+    (-1, -1),  # NW
+    ( 1,  1),  # SE
+    ( 1, -1),  # SW
 ]
 
 
 def step(world: "World") -> None:
+    world_cfg = world.config["world"]
     cfg      = world.config["temperature"]
     base_cfg = world.config["base_types"]
 
@@ -61,21 +66,36 @@ def step(world: "World") -> None:
     inertia[world.base_type == 0] = base_cfg["bare"]["thermal_inertia"]
     inertia[world.base_type == 1] = base_cfg["sand"]["thermal_inertia"]
     inertia[world.base_type == 2] = base_cfg["soil"]["thermal_inertia"]
+    inertia[world.front.ground_water>1] = 0.05  # Water has high thermal inertia, slows down temperature changes
 
     # --- Ground ↔ neighbours (conserved by construction) ---
-    outgoing = (gn_rate * inertia * f.ground_temp).astype(np.float32)
-
     incoming_ground = np.zeros_like(f.ground_temp)
-    for axis, shift in _NEIGHBOURS:
-        incoming_ground += np.roll(outgoing, shift, axis=axis)
+    total_outgoing  = np.zeros_like(f.ground_temp)
+    effective_gn_rate = gn_rate / len(_NEIGHBOURS) # Distribute total exchange rate among neighbours
+    for dr, dc in _NEIGHBOURS:
+        neighbour_inertia = np.roll(np.roll(inertia, dr, axis=0), dc, axis=1)
+        sym_inertia = (inertia + neighbour_inertia) / 2.0
+        outgoing = (effective_gn_rate * sym_inertia * f.ground_temp).astype(np.float32)
+        #outgoing = (gn_rate * sym_inertia * f.ground_temp).astype(np.float32)
+        incoming_ground += np.roll(np.roll(outgoing, dr, axis=0), dc, axis=1)
+        total_outgoing += outgoing
 
-    net_neighbour = incoming_ground - 4.0 * outgoing
+    net_neighbour = incoming_ground - total_outgoing
 
     # --- Ground ↔ atmosphere : single net flux ---
     # Positive → heat flows from ground to atmosphere
     # Negative → heat flows from atmosphere to ground
     net_flux = (exchange_rate * (f.ground_temp - f.atmo_temp)).astype(np.float32)
 
+    # Sun radiation adds energy to the system, increasing ground temperature
+    # or lowering ground temperature if the sun is below the horizon (night).
+    solar_input = world_cfg["solar_radiation"]
+    sun_rotation_speed = world_cfg.get("sun_rotation_speed", 100)
+    sun_phase = 2.0 * np.pi * world.tick_count / sun_rotation_speed
+    sun_factor = np.sin(world.uv[:, :, 0] * 2 * np.pi + sun_phase).astype(np.float32)
+    sun_factor *= solar_input
+        
     # --- Update ---
     b.ground_temp = (f.ground_temp + net_neighbour - net_flux).astype(np.float32)
+    b.ground_temp += sun_factor  # Add solar energy input to ground temperature   
     b.atmo_temp   = (f.atmo_temp   + net_flux).astype(np.float32)

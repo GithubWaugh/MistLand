@@ -42,7 +42,7 @@ from sim.world import BASE_BARE, BASE_SAND, BASE_SOIL
 # Palette
 # ---------------------------------------------------------------------------
 COLOR_BARE      = (90,  85,  80)
-COLOR_SAND      = (210, 185, 130)
+COLOR_SAND      = (189, 167, 117)
 COLOR_SOIL      = (120,  85,  50)
 COLOR_BG        = (20,  20,  20)
 
@@ -53,7 +53,7 @@ COLOR_SHRUB     = (60,  130,  60)
 COLOR_TREE_C    = (30,   90,  40)
 COLOR_TREE_T    = (80,   55,  30)
 
-OVERLAY_ALPHA   = 160
+OVERLAY_ALPHA   = 255
 MIST_ALPHA_MAX  = 200
 
 WINDOW_TITLE    = "MistLand"
@@ -62,7 +62,7 @@ WINDOW_H        = 512
 INFO_BAR_H      = 24
 ZOOM_MIN        = 1
 ZOOM_MAX        = 32
-ZOOM_DEFAULT    = 4
+ZOOM_DEFAULT    = 3
 INFO_FONT_SIZE  = 14
 INSPECT_FONT_SIZE = 13
 

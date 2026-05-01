@@ -26,10 +26,14 @@ if TYPE_CHECKING:
 
 
 _NEIGHBOURS = [
-    (0,  1),   # north
-    (0, -1),   # south
-    (1, -1),   # east
-    (1,  1),   # west
+    (-1,  0),  # north
+    ( 1,  0),  # south
+    ( 0,  1),  # east
+    ( 0, -1),  # west
+    (-1,  1),  # NE
+    (-1, -1),  # NW
+    ( 1,  1),  # SE
+    ( 1, -1),  # SW
 ]
 
 
@@ -66,8 +70,9 @@ def step(world: "World") -> None:
 
     # --- Hydraulic altitude deltas to each neighbour ---
     deltas = []
-    for axis, shift in _NEIGHBOURS:
-        d = effective_alt - np.roll(effective_alt, shift, axis=axis)
+    for dr, dc in _NEIGHBOURS:
+        shifted = np.roll(np.roll(effective_alt, dr, axis=0), dc, axis=1)
+        d = effective_alt - shifted
         deltas.append(np.maximum(d, 0.0).astype(np.float32))
 
     total_delta = np.add.reduce(deltas).astype(np.float32)
@@ -89,7 +94,7 @@ def step(world: "World") -> None:
     new_ground_water = (f.ground_water - outflow).astype(np.float32)
 
     # --- Add inflow from each neighbour ---
-    for i, (axis, shift) in enumerate(_NEIGHBOURS):
+    for i, (dr, dc) in enumerate(_NEIGHBOURS):
         fraction = np.where(
             total_delta > 0.0,
             deltas[i] / (total_delta + 1e-8),
@@ -97,7 +102,7 @@ def step(world: "World") -> None:
         ).astype(np.float32)
 
         water_to_neighbour = (outflow * fraction).astype(np.float32)
-        new_ground_water  += np.roll(water_to_neighbour, -shift, axis=axis)
+        new_ground_water  += np.roll(np.roll(water_to_neighbour, -dr, axis=0), -dc, axis=1)
 
     new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
 
