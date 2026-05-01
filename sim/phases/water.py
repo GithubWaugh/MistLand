@@ -3,17 +3,18 @@ water.py
 Phase 7 : Water movements — runoff and flooding.
 
 Each tick :
-  - For each cell, water flows to lower neighbours proportionally
-    to the altitude difference (positive delta only).
-  - Sand and soil retain a minimum amount of water (retention_min),
-    even if they are on high ground.
-  - If ground_water exceeds the flooding threshold for the cell's
-    base type, the cell is a lake and generates nutriments for
-    its neighbours. Runoff from lakes also carries nutriments.
+  - Runoff is driven by HYDRAULIC ALTITUDE rather than terrain altitude alone :
+      effective_alt(cell) = altitude(cell) + ground_water(cell) * water_to_altitude
+    This prevents water from flowing uphill into already-flooded cells.
+    A cell with gw=18 at altitude 0.3 has a higher water surface than a
+    dry neighbour at the same terrain altitude — water stays put.
+  - Sand and soil retain a minimum amount of water (retention_min).
+  - Flooded cells (lakes) generate nutriments for neighbours.
+    Runoff from lakes also carries nutriments downstream.
 
-Conservation : total ground_water must remain constant.
-  ground_water is NOT capped at 1.0 here — values above 1.0 indicate
-  a lake cell. The flooding threshold determines lake status.
+Conservation : total ground_water remains constant.
+  ground_water is NOT capped at 1.0 — values above flooding_threshold
+  indicate a lake cell.
 """
 
 from __future__ import annotations
@@ -37,7 +38,8 @@ def step(world: "World") -> None:
     base_cfg = world.config["base_types"]
     nut_cfg  = world.config["nutriments"]
 
-    runoff_rate = cfg["runoff_rate"]
+    runoff_rate   = cfg["runoff_rate"]
+    water_to_alt  = cfg.get("water_to_altitude", 0.1)
 
     f = world.front
     b = world.back
@@ -57,10 +59,15 @@ def step(world: "World") -> None:
     flood_thresh[bt == 1] = base_cfg["sand"]["flooding_threshold"]
     flood_thresh[bt == 2] = base_cfg["soil"]["flooding_threshold"]
 
-    # --- Altitude deltas to each neighbour (positive = current cell higher) ---
+    # --- Hydraulic altitude : terrain + water column ---
+    # Water only flows from cells where the water SURFACE is higher,
+    # not just where the terrain is higher.
+    effective_alt = (alt + f.ground_water * water_to_alt).astype(np.float32)
+
+    # --- Hydraulic altitude deltas to each neighbour ---
     deltas = []
     for axis, shift in _NEIGHBOURS:
-        d = alt - np.roll(alt, shift, axis=axis)
+        d = effective_alt - np.roll(effective_alt, shift, axis=axis)
         deltas.append(np.maximum(d, 0.0).astype(np.float32))
 
     total_delta = np.add.reduce(deltas).astype(np.float32)
@@ -83,7 +90,6 @@ def step(world: "World") -> None:
 
     # --- Add inflow from each neighbour ---
     for i, (axis, shift) in enumerate(_NEIGHBOURS):
-        # Fraction of outflow going to this neighbour
         fraction = np.where(
             total_delta > 0.0,
             deltas[i] / (total_delta + 1e-8),
@@ -91,11 +97,8 @@ def step(world: "World") -> None:
         ).astype(np.float32)
 
         water_to_neighbour = (outflow * fraction).astype(np.float32)
+        new_ground_water  += np.roll(water_to_neighbour, -shift, axis=axis)
 
-        # Deposit in neighbour cell (inverse roll)
-        new_ground_water += np.roll(water_to_neighbour, -shift, axis=axis)
-
-    # Ensure no negative water (numerical safety only, should not happen)
     new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
 
     # --- Flooding : cells above threshold are lakes ---
@@ -113,8 +116,8 @@ def step(world: "World") -> None:
         ).astype(np.uint8)
 
     # Runoff from lakes carries nutriments downstream
-    nut_transport  = nut_cfg["runoff_transport_rate"]
-    lake_outflow   = np.where(is_lake, outflow, 0.0).astype(np.float32)
+    nut_transport = nut_cfg["runoff_transport_rate"]
+    lake_outflow  = np.where(is_lake, outflow, 0.0).astype(np.float32)
 
     for i, (axis, shift) in enumerate(_NEIGHBOURS):
         fraction = np.where(
@@ -130,14 +133,11 @@ def step(world: "World") -> None:
             0, 255
         ).astype(np.uint8)
 
-    new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
-
-    # Force conservation : redistribuer l'écart dû aux arrondis
+    # --- Force conservation (float32 rounding correction) ---
     water_before = f.ground_water.sum()
     water_after  = new_ground_water.sum()
     error        = water_before - water_after
     if abs(error) > 1e-6:
-        # Distribuer l'erreur uniformément sur toutes les cellules
         new_ground_water += error / (world.height * world.width)
 
     # --- Apply to back buffer ---

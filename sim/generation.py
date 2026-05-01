@@ -2,12 +2,19 @@
 generation.py
 Generates the initial world state.
 
-Altitude : pure numpy tileable value noise, 5 octaves.
-Fertility : static noise field [-1..1], frequency varies by base type :
-  - bare → high frequency (strong local contrast, rocky patchwork)
-  - sand → medium frequency (larger patches)
-  - soil → low frequency (broad fertile / hostile zones)
+Altitude : pure numpy tileable value noise, seamlessly toric.
+
+Tiling fix :
+  Each octave uses period = int(freq), which guarantees that
+  noise(x=0) == noise(x=freq) on both axes — seamless on the torus.
+  All frequencies must be integers >= 2 to avoid degenerate cases.
+
+Octave balance :
+  Higher-frequency octaves have larger relative amplitudes than before,
+  giving more pronounced peaks and valleys at local scale.
+
 Temperature : latitudinal gradient via cos(π·v).
+Fertility : per-base-type noise, varying frequency.
 """
 
 import numpy as np
@@ -16,22 +23,26 @@ from scipy.ndimage import gaussian_filter
 from sim.world import World, BASE_BARE, BASE_SAND, BASE_SOIL
 
 
+# Octaves : (amplitude, frequency)
+# All frequencies must be integers >= 2 for seamless toric tiling.
+# Higher amplitudes on mid/high freqs → more peaks and valleys.
 OCTAVES = [
-    (1.000, 1.0),
-    (0.500, 2.0),
-    (0.250, 4.0),
-    (0.125, 8.0),
-    (0.063, 16.0),
+    (1.000,  2),    # continental scale  (2 repetitions across map)
+    (0.600,  4),    # regional features
+    (0.400,  8),    # mountain ranges
+    (0.250, 16),    # hills and valleys
+    (0.150, 32),    # local relief
+    (0.080, 64),    # fine texture
 ]
 
-BLUR_SIGMA = 1.5
+BLUR_SIGMA = 0.8   # reduced from 1.5 — keeps more sharp detail
 
-# Fertility noise parameters per base type
-# (frequency_multiplier, blur_sigma)
+
+# Fertility noise params per base type : (frequency, blur)
 FERTILITY_PARAMS = {
-    BASE_BARE : (16.0, 0.5),   # high freq, sharp contrast
-    BASE_SAND : (6.0,  1.5),   # medium freq, moderate patches
-    BASE_SOIL : (2.0,  3.0),   # low freq, broad zones
+    BASE_BARE : (16, 0.5),
+    BASE_SAND : ( 6, 1.5),
+    BASE_SOIL : ( 2, 3.0),
 }
 
 
@@ -45,10 +56,11 @@ def generate(world: World, seed: int = 42) -> None:
 
 
 # ------------------------------------------------------------------
-# Pure numpy tileable value noise
+# Hash
 # ------------------------------------------------------------------
 
 def _hash2(ix: np.ndarray, iy: np.ndarray, seed: int) -> np.ndarray:
+    """Fast integer hash → float64 in [-1, 1]. All arithmetic in uint32."""
     ix = ix.astype(np.uint32)
     iy = iy.astype(np.uint32)
     s  = np.uint32(seed & 0xFFFFFFFF)
@@ -58,23 +70,43 @@ def _hash2(ix: np.ndarray, iy: np.ndarray, seed: int) -> np.ndarray:
     return (h.astype(np.float64) / np.float64(0xFFFFFFFF)) * 2.0 - 1.0
 
 
-def _value_noise_2d(h: int, w: int, freq: float, seed: int) -> np.ndarray:
-    xs = np.linspace(0.0, freq, w, endpoint=False, dtype=np.float64)
-    ys = np.linspace(0.0, freq, h, endpoint=False, dtype=np.float64)
-    xg, yg = np.meshgrid(xs, ys)
+# ------------------------------------------------------------------
+# Seamlessly tiling value noise
+# ------------------------------------------------------------------
 
-    period = int(np.ceil(freq)) + 1
+def _value_noise_2d(h: int, w: int, freq: int, seed: int) -> np.ndarray:
+    """
+    Tileable 2D value noise on a (h, w) grid.
 
+    Tiling guarantee :
+      period = freq (integer).
+      The lattice wraps at exactly freq units, so the sample at x=0
+      and the sample at x=freq (= next tile start) use the same corner
+      hashes → perfectly seamless on a torus.
+
+    freq must be an integer >= 2.
+    """
+    assert freq >= 2, "freq must be >= 2 for seamless tiling"
+    period = freq
+
+    # Sample coordinates in [0, freq)
+    xs = np.linspace(0.0, float(freq), w, endpoint=False, dtype=np.float64)
+    ys = np.linspace(0.0, float(freq), h, endpoint=False, dtype=np.float64)
+    xg, yg = np.meshgrid(xs, ys)   # (h, w)
+
+    # Integer lattice corners (wrap at period)
     x0 = np.floor(xg).astype(np.int32) % period
     y0 = np.floor(yg).astype(np.int32) % period
     x1 = (x0 + 1) % period
     y1 = (y0 + 1) % period
 
+    # Fractional part + smoothstep
     fx = xg - np.floor(xg)
     fy = yg - np.floor(yg)
     ux = fx * fx * (3.0 - 2.0 * fx)
     uy = fy * fy * (3.0 - 2.0 * fy)
 
+    # Bilinear interpolation of corner hashes
     v00 = _hash2(x0, y0, seed)
     v10 = _hash2(x1, y0, seed)
     v01 = _hash2(x0, y1, seed)
@@ -93,9 +125,11 @@ def _value_noise_2d(h: int, w: int, freq: float, seed: int) -> np.ndarray:
 def _generate_altitude(world: World, seed: int) -> None:
     h, w = world.height, world.width
     alt  = np.zeros((h, w), dtype=np.float64)
-    for i, (amplitude, freq_mult) in enumerate(OCTAVES):
-        layer = _value_noise_2d(h, w, freq_mult, seed + i * 7919)
+
+    for i, (amplitude, freq) in enumerate(OCTAVES):
+        layer = _value_noise_2d(h, w, freq, seed + i * 7919)
         alt  += amplitude * layer
+
     alt = gaussian_filter(alt, sigma=BLUR_SIGMA)
     alt -= alt.min()
     alt /= alt.max()
@@ -119,33 +153,19 @@ def _generate_base_type(world: World) -> None:
 # ------------------------------------------------------------------
 
 def _generate_fertility(world: World, seed: int) -> None:
-    """
-    Generate a static fertility field [-1..1] per cell.
-    Each base type uses a different noise frequency and blur :
-      - bare : high frequency → sharp rocky patchwork
-      - sand : medium frequency → dune-like patches
-      - soil : low frequency → broad fertile / barren zones
-    The final field is a weighted blend — each cell uses only
-    the noise layer matching its base type.
-    """
     h, w   = world.height, world.width
     bt     = world.base_type
     result = np.zeros((h, w), dtype=np.float32)
 
-    # Use a seed offset far from altitude seeds to avoid correlation
     fertility_seed = seed + 99991
 
     for base_val, (freq, blur) in FERTILITY_PARAMS.items():
-        # Generate noise layer for this base type
+        freq = max(2, int(freq))   # ensure integer >= 2
         layer = _value_noise_2d(h, w, freq, fertility_seed + base_val * 3571)
         layer = gaussian_filter(layer, sigma=blur)
-
-        # Normalise to [-1, 1]
         mn, mx = layer.min(), layer.max()
         if mx - mn > 1e-6:
             layer = (layer - mn) / (mx - mn) * 2.0 - 1.0
-
-        # Apply only to cells of matching base type
         mask = (bt == base_val)
         result[mask] = layer[mask].astype(np.float32)
 
@@ -182,11 +202,8 @@ def _distribute_temperature(world: World) -> None:
     alt_lapse  = 15.0
 
     ground_temp = (
-        temp_base
-        + temp_range * lat_factor
-        - alt_lapse  * alt
+        temp_base + temp_range * lat_factor - alt_lapse * alt
     ).astype(np.float32)
-
     atmo_temp = (ground_temp - 5.0).astype(np.float32)
 
     world.front.ground_temp = ground_temp
@@ -212,7 +229,7 @@ def _update_albedo(world: World) -> None:
     cfg    = world.config["base_types"]
     bt     = world.base_type
     albedo = np.zeros((world.height, world.width), dtype=np.float32)
-    albedo[bt == 0] = cfg["bare"]["albedo_base"]
-    albedo[bt == 1] = cfg["sand"]["albedo_base"]
-    albedo[bt == 2] = cfg["soil"]["albedo_base"]
+    albedo[bt == BASE_BARE] = cfg["bare"]["albedo_base"]
+    albedo[bt == BASE_SAND] = cfg["sand"]["albedo_base"]
+    albedo[bt == BASE_SOIL] = cfg["soil"]["albedo_base"]
     world.front.albedo = albedo

@@ -1,65 +1,132 @@
 {
+  "_comment": "MistLand — default simulation parameters. Keys prefixed with '_comment' are ignored by the simulation.",
+
   "world": {
+    "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
     "grid_width": 512,
     "grid_height": 256,
-    "total_water": 2.0,
-    "total_energy": 50000
+    "total_water": 0.5,
+    "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
+    "total_energy": 50000,
+    "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation)."
   },
 
   "base_types": {
-    "bare": { "thermal_inertia": 0.8, "water_retention": 0.0,  "flooding_threshold": 0.2, "albedo_base": 0.40 },
-    "sand": { "thermal_inertia": 0.3, "water_retention": 0.05, "flooding_threshold": 0.5, "albedo_base": 0.60 },
-    "soil": { "thermal_inertia": 0.5, "water_retention": 0.15, "flooding_threshold": 0.8, "albedo_base": 0.30 }
+    "_comment": "Static properties per ground type. bare=rock, sand=sand, soil=fertile ground.",
+    "bare": {
+      "_comment": "Rock — retains no water, heats and cools quickly, floods easily (low threshold).",
+      "thermal_inertia": 0.8,
+      "_comment_thermal_inertia": "How slowly the cell exchanges heat with neighbours. Higher = slower change.",
+      "water_retention": 0.0,
+      "_comment_water_retention": "Minimum ground_water kept even on high ground (prevents total drainage).",
+      "flooding_threshold": 0.2,
+      "_comment_flooding_threshold": "ground_water level above which cell becomes a lake. Lower = floods easily.",
+      "albedo_base": 0.40,
+      "_comment_albedo_base": "Base energy reflection fraction. Higher = reflects more = stays cooler."
+    },
+    "sand": {
+      "_comment": "Sand — low thermal inertia (heats fast), slight water retention, moderate flood threshold.",
+      "thermal_inertia": 0.3,
+      "water_retention": 0.05,
+      "flooding_threshold": 0.5,
+      "albedo_base": 0.60
+    },
+    "soil": {
+      "_comment": "Soil — moderate inertia, good water retention, hard to flood (high threshold).",
+      "thermal_inertia": 0.5,
+      "water_retention": 0.15,
+      "flooding_threshold": 0.8,
+      "albedo_base": 0.30
+    }
   },
 
   "temperature": {
+    "_comment": "Controls heat exchange rates between ground, atmosphere and neighbours. All rates in [0..1] fraction per tick.",
     "ground_to_neighbour_rate": 0.05,
+    "_comment_ground_to_neighbour_rate": "Fraction of ground temperature radiated to each of the 4 neighbours per tick. Modulated by thermal_inertia.",
     "ground_to_atmosphere_rate": 0.10,
-    "atmosphere_to_ground_rate": 0.08
+    "_comment_ground_to_atmosphere_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with atmosphere_to_ground_rate).",
+    "atmosphere_to_ground_rate": 0.08,
+    "_comment_atmosphere_to_ground_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with ground_to_atmosphere_rate)."
   },
 
   "atmosphere": {
+    "_comment": "Controls pressure computation and wind-driven transport.",
     "P_base": 1.0,
+    "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
     "k_temp": 0.01,
+    "_comment_k_temp": "Weight of temperature deviation in pressure formula. Higher = temperature has more influence on wind.",
     "k_alt": 0.05,
+    "_comment_k_alt": "Weight of altitude in pressure formula. Higher = mountains create stronger pressure gradients.",
     "temp_ref": 15.0,
+    "_comment_temp_ref": "Reference temperature (°C) at which pressure equals P_base. Cells warmer than this have lower pressure.",
     "k_wind": 0.5,
+    "_comment_k_wind": "Wind strength coefficient. wind(A→B) = k_wind * (pressure(A) - pressure(B)). Higher = stronger winds.",
     "pressure_damping": 0.1,
-    "wind_transport_rate": 0.4
+    "_comment_pressure_damping": "How fast pressure converges toward its target each tick. 1.0 = instant, 0.1 = slow drift (more stable).",
+    "wind_transport_rate": 0.4,
+    "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick."
   },
 
   "water": {
+    "_comment": "Controls the water cycle : evaporation, runoff, and hydraulic altitude.",
     "evap_temp_threshold": 25.0,
+    "_comment_evap_temp_threshold": "Ground temperature (°C) above which evaporation occurs. Lower = more evaporation overall.",
     "evap_rate": 0.05,
-    "runoff_rate": 0.3
+    "_comment_evap_rate": "Fraction of available ground water evaporated per tick when above threshold.",
+    "runoff_rate": 0.0051,
+    "_comment_runoff_rate": "Fraction of available water flowing downhill per tick. Lower = slower rivers, fewer oscillations.",
+    "water_to_altitude": 0.1,
+    "_comment_water_to_altitude": "Converts ground_water to an equivalent altitude for runoff calculation. effective_alt = terrain_alt + gw * water_to_altitude. Higher = flooded cells retain water more (less overflow)."
   },
 
   "rain": {
+    "_comment": "Controls precipitation. Rain occurs when atmo_temp < threshold AND mist >= humidity_threshold.",
     "rain_temp_threshold": 5.0,
+    "_comment_rain_temp_threshold": "Atmospheric temperature (°C) below which rain can occur. Raise to make rain more frequent.",
     "rain_humidity_threshold": 5,
-    "rain_rate": 0.6
+    "_comment_rain_humidity_threshold": "Minimum mist level [0..7] required to trigger rain. Lower = rain more easily.",
+    "rain_rate": 0.6,
+    "_comment_rain_rate": "Fraction of mist converted to ground water per rainy tick."
   },
 
   "nutriments": {
+    "_comment": "Controls nutriment dynamics : diffusion, lake generation, and runoff transport.",
     "diffusion_rate": 0.02,
+    "_comment_diffusion_rate": "Fraction of a cell's nutriments diffused to each neighbour per tick. Simulates microfauna movement.",
     "lake_generation_rate": 3,
-    "runoff_transport_rate": 0.1
+    "_comment_lake_generation_rate": "Nutriment units generated for lake neighbours per tick. Lakes fertilise their banks.",
+    "runoff_transport_rate": 0.1,
+    "_comment_runoff_transport_rate": "Fraction of lake outflow converted to nutriments for downstream cells."
   },
 
   "vegetation": {
+    "_comment": "Controls vegetation growth, devolution, and resource consumption. growth_period and thresholds interact with fertility field.",
     "growth_period_ticks": 60,
+    "_comment_growth_period_ticks": "Minimum ticks between two growth events for a cell. Counter resets to a random value in [0, period/2] on each change (desynchronisation).",
     "water_min": 0.04,
+    "_comment_water_min": "Minimum ground_water required for growth. Modulated by fertility (±fertility_water_range).",
     "temp_min": 0.0,
+    "_comment_temp_min": "Minimum ground temperature (°C) for growth.",
     "temp_max": 40.0,
+    "_comment_temp_max": "Maximum ground temperature (°C) for growth.",
     "nutriments_min": 10,
+    "_comment_nutriments_min": "Minimum nutriments required for growth (except lichens). Modulated by fertility (±fertility_nut_range).",
     "growth_cost_water": 0.1,
+    "_comment_growth_cost_water": "Ground water consumed on each growth step (moved to vegetation_water store).",
     "growth_cost_nutriments": 10,
+    "_comment_growth_cost_nutriments": "Nutriments consumed on each growth step.",
     "water_stored_per_level": 0.05,
+    "_comment_water_stored_per_level": "Reserved — not currently used in computation.",
     "devolution_nutriments_release": 8,
-    "devolution_water_release": 0.05
+    "_comment_devolution_nutriments_release": "Nutriments released to ground on each devolution step.",
+    "devolution_water_release": 0.05,
+    "_comment_devolution_water_release": "Reserved — previously used for mist release on devolution."
   },
 
   "albedo": {
-    "vegetation_reduction_per_level": 0.05
+    "_comment": "Controls how vegetation modifies cell albedo.",
+    "vegetation_reduction_per_level": 0.05,
+    "_comment_vegetation_reduction_per_level": "Albedo reduction per vegetation level. Trees (level 4) reduce albedo by 0.20, making vegetated areas absorb more heat."
   }
 }
