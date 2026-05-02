@@ -8,6 +8,7 @@ starts with a physically plausible wind field rather than zero.
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
+from sim import world
 from sim.world import World, BASE_BARE, BASE_SAND, BASE_SOIL
 
 
@@ -23,9 +24,9 @@ OCTAVES = [
 BLUR_SIGMA = 0.8
 
 FERTILITY_PARAMS = {
-    BASE_BARE : (16, 0.5),
-    BASE_SAND : ( 6, 1.5),
-    BASE_SOIL : ( 2, 3.0),
+    BASE_BARE : (256, 0.25),
+    BASE_SAND : ( 128, 1.5),
+    BASE_SOIL : ( 64, 3.0),
 }
 
 
@@ -118,7 +119,7 @@ def _generate_fertility(world, seed):
         if mx - mn > 1e-6:
             layer = (layer - mn) / (mx - mn) * 2.0 - 1.0
         result[bt == base_val] = layer[bt == base_val].astype(np.float32)
-    world.fertility = result
+    world.fertility = abs(result)
 
 
 # ------------------------------------------------------------------
@@ -128,7 +129,7 @@ def _generate_fertility(world, seed):
 def _distribute_water(world):
     total   = world.config["world"]["total_water"]
     h, w    = world.height, world.width
-    weight  = np.clip(1.0 - world.altitude, 0.01, None)
+    weight  = np.clip(1-world.altitude, 0.01, None)
     weight /= weight.sum()
     world.front.ground_water = (weight * total * h * w).astype(np.float32)
 

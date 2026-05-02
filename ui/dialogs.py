@@ -229,6 +229,7 @@ def help_dialog(parent) -> None:
         ("6",            "Toggle mist / cloud overlay"),
         ("7",            "Toggle wind streamers"),
         ("8",            "Toggle rain overlay"),
+        ("9",            "Toggle fertility overlay"),
         ("I",            "Toggle inspect panel (follows cursor)"),
         ("",             ""),
         ("Mouse wheel",  "Zoom in / out (centred on cursor)"),

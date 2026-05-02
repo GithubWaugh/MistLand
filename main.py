@@ -12,7 +12,6 @@ from sim.generation import generate
 
 
 CONFIG_PATH = "config/default.json"
-SEED        = 42
 
 
 def load_config(path: str) -> dict:
@@ -23,15 +22,16 @@ def load_config(path: str) -> dict:
 def main():
     print("=== MistLand ===")
     config = load_config(CONFIG_PATH)
+    seed = config["world"].get("seed", 42)
 
     w = config["world"]["grid_width"]
     h = config["world"]["grid_height"]
     print(f"Creating world ({w} × {h})…")
     world = World(config)
 
-    print(f"Generating world (seed={SEED})…")
+    print(f"Generating world (seed={seed})…")
     t0 = time.perf_counter()
-    generate(world, seed=SEED)
+    generate(world, seed=seed)
     print(f"Generation done in {time.perf_counter() - t0:.3f}s")
 
     from ui.main_window import MainWindow

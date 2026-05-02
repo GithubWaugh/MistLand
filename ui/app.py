@@ -30,7 +30,7 @@ COLOR_TREE_T = (80,   55,  30)
 COLOR_WIND   = (220, 220, 255)
 COLOR_RAIN   = (180, 210, 255)
 
-OVERLAY_ALPHA    = 200
+OVERLAY_ALPHA    = 255
 MIST_ALPHA_MAX   = 200
 WINDOW_W         = 1024
 WINDOW_H         = 512
@@ -44,7 +44,7 @@ INSPECT_FONT_SIZE= 13
 SPEED_STEPS  = [0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 SPEED_DEFAULT = 2
 
-OV_NONE = 0; OV_WATER = 1; OV_TEMP = 2; OV_PRESSURE = 3; OV_ALTITUDE = 5
+OV_NONE = 0; OV_WATER = 1; OV_TEMP = 2; OV_PRESSURE = 3; OV_ALTITUDE = 5; OV_FERTILITY = 9
 
 VEG_NAMES  = {VEG_NONE:"None", VEG_LICHENS:"Lichens",
               VEG_GRASS:"Grass", VEG_SHRUBS:"Shrubs", VEG_TREES:"Trees"}
@@ -144,6 +144,9 @@ def _water_rgb(world):
 
 def _temp_rgb(world):
     return _lerp_colour((50,80,200),(220,60,30),_normalise(world.front.ground_temp))
+
+def _fertility_rgb(world):
+    return _lerp_colour((30,30,30),(30,200,30),_normalise(world.fertility))
 
 def _pressure_rgb(world):
     return _lerp_colour((80,20,120),(240,200,30),_normalise(world.front.pressure))
@@ -354,6 +357,7 @@ class Renderer:
             if   s.overlay_mode==OV_WATER:    ov=_water_rgb(world)
             elif s.overlay_mode==OV_TEMP:     ov=_temp_rgb(world)
             elif s.overlay_mode==OV_PRESSURE: ov=_pressure_rgb(world)
+            elif s.overlay_mode==OV_FERTILITY: ov=_fertility_rgb(world)
             else:                             ov=self.altitude_rgb
             os2,ox2,oy2=_crop_and_scale(ov,s.cam_x,s.cam_y,s.zoom,vw,vh,ww,wh)
             if os2:
@@ -391,7 +395,7 @@ class Renderer:
 
         pygame.draw.rect(screen,(20,20,20),(0,sh-INFO_BAR_H,sw,INFO_BAR_H))
         ov_n={OV_NONE:"---",OV_WATER:"water",OV_TEMP:"temp",
-              OV_PRESSURE:"pressure",OV_ALTITUDE:"altitude"}
+              OV_PRESSURE:"pressure",OV_ALTITUDE:"altitude",OV_FERTILITY:"fertility"}
         spd=f"{SPEED_STEPS[s.speed_idx]:.2f}".rstrip('0').rstrip('.')+" t/s"
         info=(f"Tick {world.tick_count:5d}  |  Zoom {s.zoom:2d}x  |  "
               f"[{'PAUSED' if s.paused else spd}]  Ov:{ov_n[s.overlay_mode]}  "
@@ -401,7 +405,7 @@ class Renderer:
               f"Rain:{'on' if s.show_rain else 'off'}  "
               f"Inspect:{'on' if s.show_inspect else 'off'}  |  "
               f"[SPC]step [A]pause [PgUp/Dn]speed "
-              f"[1-3,5]overlay [4]veg [6]mist [7]wind [8]rain [I]inspect")
+              f"[1-3,5,9]overlay [4]veg [6]mist [7]wind [8]rain [I]inspect")
         screen.blit(self._font.render(info,True,(180,180,180)),(8,sh-INFO_BAR_H+4))
         pygame.display.flip()
 
@@ -424,6 +428,7 @@ class Renderer:
             elif k==pygame.K_6: s.show_mist=not s.show_mist
             elif k==pygame.K_7: s.show_wind=not s.show_wind
             elif k==pygame.K_8: s.show_rain=not s.show_rain
+            elif k==pygame.K_9: s.overlay_mode=OV_NONE if s.overlay_mode==OV_FERTILITY else OV_FERTILITY
             elif k==pygame.K_i: s.show_inspect=not s.show_inspect
         elif event.type==pygame.MOUSEWHEEL:
             mx,my=pygame.mouse.get_pos()

@@ -3,9 +3,11 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
+    "seed": 0,
+     "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
     "grid_width": 512,
     "grid_height": 256,
-    "total_water": 1,
+    "total_water": 1.5,
     "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
     "total_energy": 50000,
     "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation).",
@@ -60,11 +62,11 @@
     "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
     "k_temp": 0.005,
     "_comment_k_temp": "Weight of temperature deviation in pressure formula. Higher = temperature has more influence on wind.",
-    "k_alt": 0.1,
+    "k_alt": 0.2,
     "_comment_k_alt": "Weight of altitude in pressure formula. Higher = mountains create stronger pressure gradients.",
-    "temp_ref": 29.0,
+    "temp_ref": 15.0,
     "_comment_temp_ref": "Reference temperature (°C) at which pressure equals P_base. Cells warmer than this have lower pressure.",
-    "k_wind": 0.2,
+    "k_wind": 0.1,
     "_comment_k_wind": "Wind strength coefficient. wind(A→B) = k_wind * (pressure(A) - pressure(B)). Higher = stronger winds.",
     "pressure_damping": 0.1,
     "_comment_pressure_damping": "How fast pressure converges toward its target each tick. 1.0 = instant, 0.1 = slow drift (more stable).",
@@ -72,10 +74,10 @@
     "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick.",
     "mist_diffusion_rate": 0.02,
     "mist_advection_rate": 0.075,
-    "wind_advection_strength": 0.2,
+    "wind_advection_strength": 0.1,
     "wind_viscosity": 0.01,
     "wind_damping": 0.995,
-    "wind_max_speed": 1.0
+    "wind_max_speed": 3.0
   },
 
   "water": {
@@ -102,12 +104,14 @@
 
   "nutriments": {
     "_comment": "Controls nutriment dynamics : diffusion, lake generation, and runoff transport.",
-    "diffusion_rate": 0.02,
+    "diffusion_rate": 0.01,
     "_comment_diffusion_rate": "Fraction of a cell's nutriments diffused to each neighbour per tick. Simulates microfauna movement.",
-    "lake_generation_rate": 3,
+    "lake_generation_rate": 1,
     "_comment_lake_generation_rate": "Nutriment units generated for lake neighbours per tick. Lakes fertilise their banks.",
     "runoff_transport_rate": 0.1,
-    "_comment_runoff_transport_rate": "Fraction of lake outflow converted to nutriments for downstream cells."
+    "_comment_runoff_transport_rate": "Fraction of lake outflow converted to nutriments for downstream cells.",
+    "water_max_nutriments": 16,
+    "_comment_water_max_nutriments": "Maximum nutriments in flooded cells (lakes)"
   },
 
   "vegetation": {

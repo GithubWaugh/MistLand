@@ -3,12 +3,12 @@ nutriments.py
 Phase 4 : Nutriment diffusion to neighbours.
 
 Each tick, a fraction (diffusion_rate) of each cell's nutriments
-diffuses equally to its 4 direct neighbours.
+diffuses equally to its 8 direct neighbours.
 Simulates microfauna movement (insects, worms, etc.)
 
 Nutriments are uint8 [0..255]. Diffusion uses integer arithmetic :
   - Each cell sends floor(diffusion_rate * nutriments) to each neighbour.
-  - The actual amount sent = units_per_neighbour * 4 (total outgoing).
+  - The actual amount sent = units_per_neighbour * 8 (total outgoing).
   - Conservation : what leaves one cell enters its neighbours exactly.
 
 Note : nutriments are also modified by water.py (lakes, runoff)
@@ -50,8 +50,8 @@ def step(world: "World") -> None:
         diffusion_rate * f.nutriments.astype(np.float32)
     ).astype(np.uint8)
 
-    # Total outgoing (4 neighbours)
-    total_outgoing = (units_per_neighbour.astype(np.uint16) * 4).astype(np.uint16)
+    # Total outgoing (8 neighbours)
+    total_outgoing = (units_per_neighbour.astype(np.uint16) * 8).astype(np.uint16)
 
     # Clamp : cannot send more than available
     # (safety check — with diffusion_rate <= 0.25 this should never trigger)
@@ -61,8 +61,8 @@ def step(world: "World") -> None:
     ).astype(np.uint16)
 
     # Recompute units_per_neighbour after clamp
-    units_per_neighbour = (total_outgoing // 4).astype(np.uint8)
-    total_outgoing      = (units_per_neighbour.astype(np.uint16) * 4).astype(np.uint16)
+    units_per_neighbour = (total_outgoing // 8).astype(np.uint8)
+    total_outgoing      = (units_per_neighbour.astype(np.uint16) * 8).astype(np.uint16)
 
     # --- Build new nutriments : subtract outgoing, add incoming ---
     new_nutriments = (
@@ -76,5 +76,8 @@ def step(world: "World") -> None:
             np.roll(units_per_neighbour.astype(np.int16), -dr, axis=0), -dc, axis=1
         )
 
-    # Clamp to [0, 255] (safety)
-    b.nutriments = np.clip(new_nutriments, 0, 255).astype(np.uint8)
+    # Clamp to [0, 255] (safety); flooded cells (lakes) are capped at 16
+    clamped = np.clip(new_nutriments, 0, 255).astype(np.uint8)
+    lake_mask = world.get_flooded_mask()
+    clamped[lake_mask] = np.minimum(clamped[lake_mask], cfg["water_max_nutriments"]).astype(np.uint8)
+    b.nutriments = clamped

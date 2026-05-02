@@ -128,8 +128,8 @@ def step(world: "World") -> None:
 
     can_grow  = water_ok & temp_ok & timer_ok & (veg < veg_max)
 
-    # Lichens : sol OU mist suffisant
-    lichen_growth = can_grow & (veg == VEG_NONE) & (water_ok | mist_ok)
+    # Lichens : sol OU mist suffisant - ajout de nutriment aussi pour les lichens, moins exigeants que les autres
+    lichen_growth = can_grow & (veg == VEG_NONE) & (water_ok | mist_ok) & nut_ok
 
     # Grass : sol ET (eau OU mist) — plus exigeant
     normal_growth = can_grow & (veg > VEG_NONE) & nut_ok & (

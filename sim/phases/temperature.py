@@ -92,8 +92,8 @@ def step(world: "World") -> None:
     solar_input = world_cfg["solar_radiation"]
     sun_rotation_speed = world_cfg.get("sun_rotation_speed", 100)
     sun_phase = 2.0 * np.pi * world.tick_count / sun_rotation_speed
-    sun_factor = np.sin(world.uv[:, :, 0] * 2 * np.pi + sun_phase).astype(np.float32)
-    sun_factor *= solar_input
+    sun_factor = np.sin(world.uv[:, :, 0] * 4 * np.pi + sun_phase).astype(np.float32)
+    sun_factor *= solar_input**3 * 10
         
     # --- Update ---
     b.ground_temp = (f.ground_temp + net_neighbour - net_flux).astype(np.float32)

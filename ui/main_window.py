@@ -62,6 +62,7 @@ class MainWindow:
             "6": pygame.K_6, "minus":        pygame.K_6,   # -  ← attention, aussi signe moins
             "7": pygame.K_7, "egrave":       pygame.K_7,   # è
             "8": pygame.K_8, "underscore":   pygame.K_8,   # _
+            "9": pygame.K_9, "ccedilla":     pygame.K_9,   # ç
             "Prior":  pygame.K_PAGEUP,
             "Next":   pygame.K_PAGEDOWN,
             "Escape": pygame.K_ESCAPE,
