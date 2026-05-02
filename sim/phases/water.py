@@ -138,6 +138,18 @@ def step(world: "World") -> None:
             0, 255
         ).astype(np.uint8)
 
+    # --- Ground water diffusion for non-lake cells ---
+    # Non-lake cells spread 5% of their ground water equally to 8 neighbours.
+    gw_diffusion_rate = cfg.get("ground_water_diffusion_rate", 0.05)
+    diffuse_out = np.where(~is_lake, gw_diffusion_rate * new_ground_water, 0.0).astype(np.float32)
+    diffuse_per_neighbour = (diffuse_out / 8.0).astype(np.float32)
+
+    new_ground_water -= diffuse_out
+    for dr, dc in _NEIGHBOURS:
+        new_ground_water += np.roll(np.roll(diffuse_per_neighbour, -dr, axis=0), -dc, axis=1)
+
+    new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
+
     # --- Force conservation (float32 rounding correction) ---
     water_before = f.ground_water.sum()
     water_after  = new_ground_water.sum()

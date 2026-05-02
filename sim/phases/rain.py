@@ -32,9 +32,9 @@ def step(world: "World") -> None:
     # Cells where rain occurs
     is_raining = (
         (f.atmo_temp < temp_threshold) &
-        (f.mist >= humidity_threshold) &
-        ~is_flooded   # pas de pluie sur les lacs déjà saturés
+        (f.mist >= humidity_threshold)
     )
+    # Abandon de  & ~is_flooded   # pas de pluie sur les lacs déjà saturés -> trop artificiel
 
     # Mist lost this tick (float)
     mist_loss = np.where(

@@ -226,7 +226,7 @@ def _draw_rain_overlay(surface, world, cam_x, cam_y, zoom, vw, vh):
     ft[bt==BASE_SAND]=base_cfg["sand"]["flooding_threshold"]
     ft[bt==BASE_SOIL]=base_cfg["soil"]["flooding_threshold"]
     gw=world.front.ground_water[y0:y1,x0:x1]
-    raining=(at<tt)&(ms>=ht)&(gw<ft)
+    raining=(at<tt)&(ms>=ht)#&(gw<ft)
     n=max(1,zoom//3)
     rows,cols=np.where(raining)
     for row,col in zip(rows,cols):

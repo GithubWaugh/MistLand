@@ -62,7 +62,7 @@
     "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
     "k_temp": 0.005,
     "_comment_k_temp": "Weight of temperature deviation in pressure formula. Higher = temperature has more influence on wind.",
-    "k_alt": 0.2,
+    "k_alt": 0.01,
     "_comment_k_alt": "Weight of altitude in pressure formula. Higher = mountains create stronger pressure gradients.",
     "temp_ref": 15.0,
     "_comment_temp_ref": "Reference temperature (°C) at which pressure equals P_base. Cells warmer than this have lower pressure.",
@@ -84,19 +84,21 @@
     "_comment": "Controls the water cycle : evaporation, runoff, and hydraulic altitude.",
     "evap_temp_threshold": 25.0,
     "_comment_evap_temp_threshold": "Ground temperature (°C) above which evaporation occurs. Lower = more evaporation overall.",
-    "evap_rate": 0.01,
+    "evap_rate": 0.1,
     "_comment_evap_rate": "Fraction of available ground water evaporated per tick when above threshold.",
     "runoff_rate": 0.05,
     "_comment_runoff_rate": "Fraction of available water flowing downhill per tick. Lower = slower rivers, fewer oscillations.",
     "water_to_altitude": 0.01,
-    "_comment_water_to_altitude": "Converts ground_water to an equivalent altitude for runoff calculation. effective_alt = terrain_alt + gw * water_to_altitude. Higher = flooded cells retain water more (less overflow)."
+    "_comment_water_to_altitude": "Converts ground_water to an equivalent altitude for runoff calculation. effective_alt = terrain_alt + gw * water_to_altitude. Higher = flooded cells retain water more (less overflow).",
+    "ground_water_diffusion_rate": 0.05,
+    "_comment_ground_water_diffusion_rate": "Fraction of ground water each non-lake cell spreads equally to its 8 neighbours per tick."
   },
 
   "rain": {
     "_comment": "Controls precipitation. Rain occurs when atmo_temp < threshold AND mist >= humidity_threshold.",
-    "rain_temp_threshold": 35.0,
+    "rain_temp_threshold": 30.0,
     "_comment_rain_temp_threshold": "Atmospheric temperature (°C) below which rain can occur. Raise to make rain more frequent.",
-    "rain_humidity_threshold": 3,
+    "rain_humidity_threshold": 5,
     "_comment_rain_humidity_threshold": "Minimum mist level [0..7] required to trigger rain. Lower = rain more easily.",
     "rain_rate": 0.02,
     "_comment_rain_rate": "Fraction of mist converted to ground water per rainy tick."
