@@ -31,7 +31,7 @@ FERTILITY_PARAMS = {
 
 def generate(world: World, seed: int = 42) -> None:
     _generate_altitude(world, seed)
-    _generate_base_type(world)
+    _generate_base_type(world, seed)
     _generate_fertility(world, seed)
     _distribute_water(world)
     _distribute_temperature(world)
@@ -87,11 +87,17 @@ def _generate_altitude(world, seed):
 # Base type
 # ------------------------------------------------------------------
 
-def _generate_base_type(world):
-    alt = world.altitude
-    bt  = np.zeros_like(alt, dtype=np.uint8)
-    bt[alt >= 0.3] = BASE_SAND
-    bt[alt >= 0.6] = BASE_SOIL
+def _generate_base_type(world, seed):
+    h, w = world.height, world.width
+    noise = np.zeros((h, w), dtype=np.float64)
+    bseed = seed + 200003
+    for i, (amp, freq) in enumerate(OCTAVES):
+        noise += amp * _value_noise_2d(h, w, freq, bseed + i*7919)
+    noise = gaussian_filter(noise, sigma=BLUR_SIGMA)
+    noise -= noise.min();  noise /= noise.max()
+    bt = np.zeros((h, w), dtype=np.uint8)
+    bt[noise >= 0.3] = BASE_SAND
+    bt[noise >= 0.6] = BASE_SOIL
     world.base_type = bt
 
 

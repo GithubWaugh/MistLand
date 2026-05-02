@@ -63,7 +63,7 @@ def step(world: "World") -> None:
         wind_toward.append(component)
 
     total_wind = np.minimum(
-        sum(wind_toward).astype(np.float32), 1.0
+        np.sum(wind_toward, axis=0).astype(np.float32), 1.0
     ).astype(np.float32)
 
     fractions = []
@@ -77,11 +77,11 @@ def step(world: "World") -> None:
     # --- Temperature transport via net flux (conserved) ---
     new_atmo_temp = f.atmo_temp.copy()
     for i, (dr, dc) in enumerate(_NEIGHBOURS):
-        nb_temp  = np.roll(np.roll(f.atmo_temp, dr, axis=0), dc, axis=1)
+        nb_temp  = np.roll(np.roll(f.atmo_temp, -dr, axis=0), -dc, axis=1)
         net_flux = (transport_rate * fractions[i]
                     * (f.atmo_temp - nb_temp)).astype(np.float32)
         new_atmo_temp -= net_flux
-        new_atmo_temp += np.roll(np.roll(net_flux, -dr, axis=0), -dc, axis=1)
+        new_atmo_temp += np.roll(np.roll(net_flux,  dr, axis=0),  dc, axis=1)
 
     # --- Mist transport ---
 
@@ -101,7 +101,7 @@ def step(world: "World") -> None:
     for i, (dr, dc) in enumerate(_NEIGHBOURS):
         new_mist += np.roll(np.roll(
             (mist_outflow * fractions[i]).astype(np.float32),
-            -dr, axis=0), -dc, axis=1)
+            dr, axis=0), dc, axis=1)    # ← +dr, +dc
 
     # --- Excess mist → ground water ---
     excess_mist      = np.maximum(new_mist - 7.0, 0.0).astype(np.float32)

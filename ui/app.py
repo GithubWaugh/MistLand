@@ -99,6 +99,23 @@ def _spectral_colour(t):
             rgb[:,:,ch] += mask*(c0[ch]*(1-lt)+c1[ch]*lt)
     return rgb.clip(0,255).astype(np.uint8)
 
+def spectral(value):
+    value = max(0.0, min(1.0, value))
+    stops = [(0.0,(148,0,211)),(0.2,(0,0,255)),(0.4,(0,255,255)),
+             (0.6,(0,255,0)),(0.8,(255,255,0)),(1.0,(255,0,0))]
+    t0,t1 = 0,0
+    c0,c1 = (0,0,0),(255,255,255)
+    for i in range(len(stops)-1):
+        t0,c0 = stops[i]
+        t1,c1 = stops[i+1]
+        if value<=t1 :
+            break
+    new_value = (value - t0) / (t1 - t0)
+    rgb = [0,0,0]
+    for ch in range(3):
+        rgb[ch] = round(c0[ch]*(1-new_value) + c1[ch]*new_value)
+    return tuple(rgb)
+
 
 # ---------------------------------------------------------------------------
 # RGB builders
@@ -169,17 +186,20 @@ def _draw_wind_streamers(surface, world, cam_x, cam_y, zoom, vw, vh):
     wx = world.front.wind_x
     wy = world.front.wind_y
 
-    for cy in range(y0, y1):
-        for cx in range(x0, x1):
+    for gy in range(y0, y1):
+        for gx in range(x0, x1):
+            cy = gy % world.height   # wrap torique
+            cx = gx % world.width
             vx = float(wx[cy, cx])
             vy = float(wy[cy, cx])
             mag = math.sqrt(vx*vx + vy*vy)
             if mag < 1e-4:
                 continue
             vx /= mag;  vy /= mag
-            scx = int((cx - cam_x + 0.5) * zoom)
-            scy = int((cy - cam_y + 0.5) * zoom)
-            pygame.draw.line(surface, COLOR_WIND,
+            scx = int((gx - cam_x + 0.5) * zoom)
+            scy = int((gy - cam_y + 0.5) * zoom)
+            str_color = spectral(mag*5)
+            pygame.draw.line(surface, str_color,
                              (scx - int(vx*half), scy - int(vy*half)),
                              (scx + int(vx*half), scy + int(vy*half)), 1)
 
