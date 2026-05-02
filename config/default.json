@@ -3,11 +3,11 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
-    "seed": 0,
+    "seed": 8316,
      "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
     "grid_width": 512,
     "grid_height": 256,
-    "total_water": 1.5,
+    "total_water": 1.1,
     "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
     "total_energy": 50000,
     "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation).",
@@ -49,8 +49,8 @@
   "temperature": {
     "_comment": "Controls heat exchange rates between ground, atmosphere and neighbours. All rates in [0..1] fraction per tick.",
     "ground_to_neighbour_rate": 0.02,
-    "_comment_ground_to_neighbour_rate": "Fraction of ground temperature radiated to each of the 4 neighbours per tick. Modulated by thermal_inertia.",
-    "ground_to_atmosphere_rate": 0.02,
+    "_comment_ground_to_neighbour_rate": "Fraction of ground temperature radiated to each of the 8 neighbours per tick. Modulated by thermal_inertia.",
+    "ground_to_atmosphere_rate": 0.04,
     "_comment_ground_to_atmosphere_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with atmosphere_to_ground_rate).",
     "atmosphere_to_ground_rate": 0.01,
     "_comment_atmosphere_to_ground_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with ground_to_atmosphere_rate)."
@@ -86,9 +86,11 @@
     "_comment_evap_temp_threshold": "Ground temperature (°C) above which evaporation occurs. Lower = more evaporation overall.",
     "evap_rate": 0.01,
     "_comment_evap_rate": "Fraction of available ground water evaporated per tick when above threshold.",
-    "runoff_rate": 0.05,
+    "evap_water_temp_threshold": 25.0,
+    "_comment_evap_water_temp_threshold": "Water temperature (°C) above which evaporation occurs. Lower = more evaporation overall.",
+    "runoff_rate": 0.025,
     "_comment_runoff_rate": "Fraction of available water flowing downhill per tick. Lower = slower rivers, fewer oscillations.",
-    "water_to_altitude": 0.1,
+    "water_to_altitude": 0.05,
     "_comment_water_to_altitude": "Converts ground_water to an equivalent altitude for runoff calculation. effective_alt = terrain_alt + gw * water_to_altitude. Higher = flooded cells retain water more (less overflow).",
     "ground_water_diffusion_rate": 0.05,
     "_comment_ground_water_diffusion_rate": "Fraction of ground water each non-lake cell spreads equally to its 8 neighbours per tick."
@@ -98,9 +100,9 @@
     "_comment": "Controls precipitation. Rain occurs when atmo_temp < threshold AND mist >= humidity_threshold.",
     "rain_temp_threshold": 30.0,
     "_comment_rain_temp_threshold": "Atmospheric temperature (°C) below which rain can occur. Raise to make rain more frequent.",
-    "rain_humidity_threshold": 5,
+    "rain_humidity_threshold": 2,
     "_comment_rain_humidity_threshold": "Minimum mist level [0..7] required to trigger rain. Lower = rain more easily.",
-    "rain_rate": 0.02,
+    "rain_rate": 0.01,
     "_comment_rain_rate": "Fraction of mist converted to ground water per rainy tick."
   },
 

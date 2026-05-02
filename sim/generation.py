@@ -143,7 +143,7 @@ def _distribute_temperature(world):
     cfg = world.config["atmosphere"]
 
     v          = world.uv[:, :, 1]
-    lat_factor = np.cos(np.pi * v).astype(np.float32)
+    lat_factor = np.cos(np.pi * v * 2 + np.pi).astype(np.float32)
 
     ground_temp = (20.0 + 15.0 * lat_factor - 15.0 * alt).astype(np.float32)
     atmo_temp   = (ground_temp - 5.0).astype(np.float32)

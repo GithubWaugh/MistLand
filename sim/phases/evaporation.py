@@ -24,6 +24,7 @@ def step(world: "World") -> None:
     cfg = world.config["water"]
 
     temp_threshold = cfg["evap_temp_threshold"]
+    water_temp_threshold = cfg["evap_water_temp_threshold"]
     evap_rate      = cfg["evap_rate"]
 
     f = world.front
@@ -31,6 +32,17 @@ def step(world: "World") -> None:
 
     # Cells where evaporation occurs
     can_evaporate = (f.ground_temp > temp_threshold) & (f.ground_water > 0.0)
+
+    # Flooded cells (ground_water >= type-specific threshold) evaporate only when temp exceeds water threshold
+    bt_cfg = world.config["base_types"]
+    flood_thresholds = np.array([
+        bt_cfg["bare"]["flooding_threshold"],
+        bt_cfg["sand"]["flooding_threshold"],
+        bt_cfg["soil"]["flooding_threshold"],
+    ], dtype=np.float32)
+    cell_flood_threshold = flood_thresholds[world.base_type]
+    is_flooded = f.ground_water >= cell_flood_threshold
+    can_evaporate &= ~is_flooded | (f.ground_temp > water_temp_threshold)
 
     # Water evaporating this tick
     evaporated = np.where(
