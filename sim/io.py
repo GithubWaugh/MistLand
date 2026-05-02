@@ -3,20 +3,16 @@ io.py
 Save and load world state.
 
 Save format :
-  <save_dir>/
-    meta.json   — tick count, grid size, config snapshot
-    state.npz   — all WorldBuffers arrays (compressed numpy)
+  <save_dir>/meta.json   — tick count, grid size, config
+  <save_dir>/state.npz   — all WorldBuffers arrays (compressed)
 """
 
 import json
 import numpy as np
 from pathlib import Path
 
-from sim.world import World
 
-
-def save(world: World, save_dir: str) -> None:
-    """Save world state to save_dir."""
+def save(world, save_dir: str) -> None:
     path = Path(save_dir)
     path.mkdir(parents=True, exist_ok=True)
 
@@ -31,37 +27,32 @@ def save(world: World, save_dir: str) -> None:
 
     np.savez_compressed(
         str(path / "state.npz"),
-        # Static
         altitude         = world.altitude,
         base_type        = world.base_type,
         fertility        = world.fertility,
-        # Ground layer
         ground_water     = world.front.ground_water,
         nutriments       = world.front.nutriments,
         ground_temp      = world.front.ground_temp,
         albedo           = world.front.albedo,
         vegetation_water = world.front.vegetation_water,
-        # Atmosphere
         pressure         = world.front.pressure,
         mist             = world.front.mist,
         atmo_temp        = world.front.atmo_temp,
-        # Vegetation
+        wind_x           = world.front.wind_x,
+        wind_y           = world.front.wind_y,
         vegetation       = world.front.vegetation,
         veg_tick_counter = world.front.veg_tick_counter,
     )
 
 
-def load(save_dir: str) -> World:
-    """Load world state from save_dir. Returns a fully initialised World."""
+def load(save_dir: str):
     path = Path(save_dir)
 
     with open(path / "meta.json", encoding="utf-8") as f:
         meta = json.load(f)
 
-    config = meta["config"]
-
     from sim.world import World
-    world = World(config)
+    world = World(meta["config"])
     world.tick_count = meta["tick_count"]
 
     data = np.load(str(path / "state.npz"))
@@ -78,6 +69,8 @@ def load(save_dir: str) -> World:
     world.front.pressure         = data["pressure"]
     world.front.mist             = data["mist"]
     world.front.atmo_temp        = data["atmo_temp"]
+    world.front.wind_x           = data["wind_x"]
+    world.front.wind_y           = data["wind_y"]
     world.front.vegetation       = data["vegetation"]
     world.front.veg_tick_counter = data["veg_tick_counter"]
 

@@ -3,7 +3,8 @@ buffers.py
 Defines the WorldBuffers dataclass : one numpy array per cell field.
 The World object maintains two instances (front / back) for double-buffering.
 
-mist is now float32 [0..7] — continuous, no accumulator needed.
+mist is float32 [0..7] — continuous, no accumulator needed.
+wind_x / wind_y : persistent wind vector field, updated by Navier-Stokes (wind.py).
 """
 
 import numpy as np
@@ -16,10 +17,6 @@ def _zeros(shape: tuple, dtype) -> np.ndarray:
 
 @dataclass
 class WorldBuffers:
-    """
-    All mutable per-cell data, stored as numpy arrays of shape (height, width).
-    """
-
     height: int
     width: int
 
@@ -33,6 +30,8 @@ class WorldBuffers:
     pressure:           np.ndarray = field(init=False)  # float32 (bar)
     mist:               np.ndarray = field(init=False)  # float32 [0..7]
     atmo_temp:          np.ndarray = field(init=False)  # float32 (°C)
+    wind_x:             np.ndarray = field(init=False)  # float32 eastward wind component
+    wind_y:             np.ndarray = field(init=False)  # float32 southward wind component
 
     # --- Vegetation layer ---
     vegetation:         np.ndarray = field(init=False)  # uint8   [0..4]
@@ -50,6 +49,8 @@ class WorldBuffers:
         self.pressure           = _zeros(shape, np.float32)
         self.mist               = _zeros(shape, np.float32)
         self.atmo_temp          = _zeros(shape, np.float32)
+        self.wind_x             = _zeros(shape, np.float32)
+        self.wind_y             = _zeros(shape, np.float32)
 
         self.vegetation         = _zeros(shape, np.uint8)
         self.veg_tick_counter   = _zeros(shape, np.uint16)
@@ -63,6 +64,8 @@ class WorldBuffers:
         np.copyto(self.pressure,            other.pressure)
         np.copyto(self.mist,                other.mist)
         np.copyto(self.atmo_temp,           other.atmo_temp)
+        np.copyto(self.wind_x,              other.wind_x)
+        np.copyto(self.wind_y,              other.wind_y)
         np.copyto(self.vegetation,          other.vegetation)
         np.copyto(self.veg_tick_counter,    other.veg_tick_counter)
         np.copyto(self.vegetation_water,    other.vegetation_water)
