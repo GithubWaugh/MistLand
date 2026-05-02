@@ -146,5 +146,68 @@
     "_comment": "Controls how vegetation modifies cell albedo.",
     "vegetation_reduction_per_level": 0.5,
     "_comment_vegetation_reduction_per_level": "Albedo reduction per vegetation level. Trees (level 4) reduce albedo by 0.20, making vegetated areas absorb more heat."
+  },
+
+  "plants": {
+    "lichens": {
+      "_comment": "Lichens : lowest growth requirements, only on bare ground, no fertility bonus, no water storage, low albedo reduction.",
+      "growth_requirements": {
+        "water": 0.02,
+        "temperature": [-10.0, 40.0],
+        "altitude_max": 0.9,
+        "nutriments": 5,
+        "mist": 1.0
+      },
+      "growth_costs": {
+        "water": 0.02,
+        "nutriments": 0
+      },
+      "albedo_reduction": 0.05
+    },
+    "grass": {
+      "_comment": "Grass : moderate growth requirements, on sand or soil, benefits from fertility, moderate albedo reduction.",
+      "growth_requirements": {
+        "water": 0.04,
+        "temperature": [-5, 35.0],
+        "altitude_max": 0.8,
+        "nutriments": 10,
+        "mist": 3.0
+      },
+      "growth_costs": {
+        "water": 0.02,
+        "nutriments": 0
+      },
+      "albedo_reduction": 0.05
+    },
+    "shrubs": {
+      "_comment": "Shrubs : higher growth requirements, on sand or soil, benefits from fertility, higher albedo reduction.",
+      "growth_requirements": {
+        "water": 0.06,
+        "temperature": [5.0, 30.0],
+        "altitude_max": 0.7,
+        "nutriments": 15,
+        "mist": 4.0
+      },
+      "growth_costs": {
+        "water": 0.03,
+        "nutriments": 5
+      },
+      "albedo_reduction": 0.1
+    },
+    "trees" : {
+      "_comment": "Trees : highest growth requirements, only on soil, benefits most from fertility, highest albedo reduction.",
+      "growth_requirements": {
+        "water": 0.08,
+        "temperature": [10.0, 25.0],
+        "altitude_max": 0.6,
+        "nutriments": 20,
+        "mist": 5.0
+      },
+      "growth_costs": {
+        "water": 0.05,
+        "nutriments": 10
+      },
+      "albedo_reduction": 0.15
+    }
   }
 }

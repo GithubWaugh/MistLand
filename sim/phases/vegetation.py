@@ -113,20 +113,74 @@ def step(world: "World") -> None:
     veg_max[has_flooded_neighbour & (bt == BASE_SAND)] = VEG_SHRUBS
     # Flooded cells : only lichen survives
     veg_max[is_flooded] = VEG_LICHENS
+    # Bare ground : trees cannot grow (applied last, respects stricter caps above)
+    veg_max[bt == BASE_BARE] = np.minimum(veg_max[bt == BASE_BARE], VEG_SHRUBS)
 
     # --- Fertility-adjusted thresholds ---
     eff_water_min = (water_min - fer * fertility_water_range).astype(np.float32)
-    eff_nut_min   = (nut_min   - fer * fertility_nut_range).astype(np.float32)
+
+    # --- Altitude limitation per plant type ---
+    plants_cfg = world.config.get("plants", {})
+    alt_max_lichens = plants_cfg.get("lichens", {}).get("growth_requirements", {}).get("altitude_max", 1.0)
+    alt_max_grass   = plants_cfg.get("grass",   {}).get("growth_requirements", {}).get("altitude_max", 1.0)
+    alt_max_shrubs  = plants_cfg.get("shrubs",  {}).get("growth_requirements", {}).get("altitude_max", 1.0)
+    alt_max_trees   = plants_cfg.get("trees",   {}).get("growth_requirements", {}).get("altitude_max", 1.0)
+
+    alt = world.altitude
+    altitude_ok = (
+        ((veg == VEG_NONE)    & (alt <= alt_max_lichens)) |
+        ((veg == VEG_LICHENS) & (alt <= alt_max_grass))   |
+        ((veg == VEG_GRASS)   & (alt <= alt_max_shrubs))  |
+        ((veg == VEG_SHRUBS)  & (alt <= alt_max_trees))
+    )
+
+    # --- Temperature limitation per plant type ---
+    t_lich = plants_cfg.get("lichens", {}).get("growth_requirements", {}).get("temperature", [temp_min, temp_max])
+    t_gras = plants_cfg.get("grass",   {}).get("growth_requirements", {}).get("temperature", [temp_min, temp_max])
+    t_shru = plants_cfg.get("shrubs",  {}).get("growth_requirements", {}).get("temperature", [temp_min, temp_max])
+    t_tree = plants_cfg.get("trees",   {}).get("growth_requirements", {}).get("temperature", [temp_min, temp_max])
+
+    gt = f.ground_temp
+    temp_ok_growth = (
+        ((veg == VEG_NONE)    & (gt >= t_lich[0]) & (gt <= t_lich[1])) |
+        ((veg == VEG_LICHENS) & (gt >= t_gras[0]) & (gt <= t_gras[1])) |
+        ((veg == VEG_GRASS)   & (gt >= t_shru[0]) & (gt <= t_shru[1])) |
+        ((veg == VEG_SHRUBS)  & (gt >= t_tree[0]) & (gt <= t_tree[1]))
+    )
+
+    # --- Nutriment requirement and cost per plant type ---
+    nut_req_lichens = plants_cfg.get("lichens", {}).get("growth_requirements", {}).get("nutriments", nut_min)
+    nut_req_grass   = plants_cfg.get("grass",   {}).get("growth_requirements", {}).get("nutriments", nut_min)
+    nut_req_shrubs  = plants_cfg.get("shrubs",  {}).get("growth_requirements", {}).get("nutriments", nut_min)
+    nut_req_trees   = plants_cfg.get("trees",   {}).get("growth_requirements", {}).get("nutriments", nut_min)
+
+    nut_req = np.select(
+        [veg == VEG_NONE, veg == VEG_LICHENS, veg == VEG_GRASS, veg == VEG_SHRUBS],
+        [nut_req_lichens,  nut_req_grass,      nut_req_shrubs,   nut_req_trees],
+        default=nut_min
+    ).astype(np.float32)
+    eff_nut_req = (nut_req - fer * fertility_nut_range).astype(np.float32)
+
+    cost_nut_lichens = int(plants_cfg.get("lichens", {}).get("growth_costs", {}).get("nutriments", 0))
+    cost_nut_grass   = int(plants_cfg.get("grass",   {}).get("growth_costs", {}).get("nutriments", 0))
+    cost_nut_shrubs  = int(plants_cfg.get("shrubs",  {}).get("growth_costs", {}).get("nutriments", cost_nut))
+    cost_nut_trees   = int(plants_cfg.get("trees",   {}).get("growth_costs", {}).get("nutriments", cost_nut))
+
+    cost_nut_growth = np.select(
+        [veg == VEG_NONE, veg == VEG_LICHENS, veg == VEG_GRASS, veg == VEG_SHRUBS],
+        [cost_nut_lichens,  cost_nut_grass,    cost_nut_shrubs,  cost_nut_trees],
+        default=0
+    ).astype(np.int16)
 
     # --- Growth conditions ---
     water_ok  = gw >= eff_water_min
     temp_ok   = (f.ground_temp >= temp_min) & (f.ground_temp <= temp_max)
-    nut_ok    = nut.astype(np.float32) >= eff_nut_min
+    nut_ok    = nut.astype(np.float32) >= eff_nut_req
     timer_ok  = counter >= growth_period
     # Lichens et grass peuvent utiliser l'humidité de l'air
     mist_ok  = f.mist >= cfg.get("mist_water_threshold", 3.0)
 
-    can_grow  = water_ok & temp_ok & timer_ok & (veg < veg_max)
+    can_grow  = water_ok & temp_ok_growth & timer_ok & (veg < veg_max) & altitude_ok
 
     # Lichens : sol OU mist suffisant - ajout de nutriment aussi pour les lichens, moins exigeants que les autres
     lichen_growth = can_grow & (veg == VEG_NONE) & (water_ok | mist_ok) & nut_ok
@@ -167,11 +221,7 @@ def step(world: "World") -> None:
     b.mist = np.clip(f.mist - mist_consumed, 0.0, 7.0).astype(np.float32)
     veg_w += (mist_consumed * MIST_UNIT).astype(np.float32)
 
-    nut = np.where(
-        grows & (veg > VEG_NONE),
-        nut - cost_nut,
-        nut
-    ).astype(np.int16)
+    nut = np.where(grows, nut - cost_nut_growth, nut).astype(np.int16)
 
     veg     = np.where(grows, veg + np.uint8(1), veg).astype(np.uint8)
     counter = np.where(grows, rng_offset, counter).astype(np.uint16)
