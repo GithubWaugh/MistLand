@@ -82,13 +82,13 @@
 
   "water": {
     "_comment": "Controls the water cycle : evaporation, runoff, and hydraulic altitude.",
-    "evap_temp_threshold": 25.0,
+    "evap_temp_threshold": 10.0,
     "_comment_evap_temp_threshold": "Ground temperature (°C) above which evaporation occurs. Lower = more evaporation overall.",
-    "evap_rate": 0.1,
+    "evap_rate": 0.01,
     "_comment_evap_rate": "Fraction of available ground water evaporated per tick when above threshold.",
     "runoff_rate": 0.05,
     "_comment_runoff_rate": "Fraction of available water flowing downhill per tick. Lower = slower rivers, fewer oscillations.",
-    "water_to_altitude": 0.01,
+    "water_to_altitude": 0.1,
     "_comment_water_to_altitude": "Converts ground_water to an equivalent altitude for runoff calculation. effective_alt = terrain_alt + gw * water_to_altitude. Higher = flooded cells retain water more (less overflow).",
     "ground_water_diffusion_rate": 0.05,
     "_comment_ground_water_diffusion_rate": "Fraction of ground water each non-lake cell spreads equally to its 8 neighbours per tick."

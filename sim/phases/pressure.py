@@ -33,11 +33,14 @@ def step(world: "World") -> None:
     temp_ref = cfg["temp_ref"]
     damping  = cfg["pressure_damping"]
 
+    water_to_alt = world.config["water"].get("water_to_altitude", 0.1)
+    effective_alt = world.altitude + world.front.ground_water * water_to_alt
+
     # Target pressure (vectorized over entire grid)
     target = (
         P_base
         - k_temp * (world.front.atmo_temp - temp_ref)
-        + k_alt  * world.altitude
+        + k_alt  * effective_alt
     ).astype(np.float32)
 
     # Smooth transition toward target
