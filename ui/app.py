@@ -1,66 +1,49 @@
 """
 app.py
-Milestone 4 : pygame window — 2D top-down map view.
-Resizable window with zoom, pan, overlays and vegetation icons.
+Pygame renderer for MistLand.
 
-Layers (bottom to top) :
-  1. Base map     : base_type colours — always visible
-  2. Data overlay : water / temperature / pressure / altitude
-                    exclusive, toggle 1/2/3/5
-  3. Veg icons    : drawn per cell — toggle 4
-                    submerged lichen displayed as algae (~)
-  4. Mist overlay : white veil, opacity = mist level — toggle 6
-  5. Wind streamers : oriented dashes per cell — toggle 7
-  6. Inspect panel: cell info following mouse cursor — toggle I
+RendererState  : all mutable UI state (zoom, camera, overlays…)
+Renderer       : render(screen, world) + handle_event(event, world) -> set[str]
 
-Controls :
-  SPACE       : step one tick (when paused)
-  A           : pause / resume
-  PageUp      : speed up
-  PageDown    : slow down
-  1           : toggle water overlay
-  2           : toggle temperature overlay
-  3           : toggle pressure overlay
-  4           : toggle vegetation icons
-  5           : toggle altitude overlay (spectral, exclusive)
-  6           : toggle mist / cloud overlay
-  7           : toggle wind streamers
-  I           : toggle inspect mode
-  Mouse wheel : zoom in/out
-  RMB / MMB   : pan
-  ESC / Q     : quit
+Actions returned by handle_event :
+  'quit'          — exit the application
+  'step'          — advance one tick (when paused)
+  'toggle_pause'  — toggle pause / resume
+  'speed_up'      — increase simulation speed
+  'speed_down'    — decrease simulation speed
+  'toggle_overlay_X' — toggle overlay X (water, temp, pressure, altitude, rain)
 """
 
 import math
 import pygame
 import numpy as np
-import time
+from dataclasses import dataclass, field
 
 from sim.world import World, VEG_NONE, VEG_LICHENS, VEG_GRASS, VEG_SHRUBS, VEG_TREES
 from sim.world import BASE_BARE, BASE_SAND, BASE_SOIL
 
 
 # ---------------------------------------------------------------------------
-# Palette
+# Constants
 # ---------------------------------------------------------------------------
-COLOR_BARE      = (90,  85,  80)
-COLOR_SAND      = (189, 167, 117)
-COLOR_SOIL      = (120,  85,  50)
-COLOR_BG        = (20,  20,  20)
+COLOR_BARE   = (90,  85,  80)
+COLOR_SAND   = (189, 167, 117)
+COLOR_SOIL   = (120,  85,  50)
+COLOR_LAKE   = (40,  100, 200)
+COLOR_BG     = (20,  20,  20)
 
-COLOR_LICHEN    = (80,  110,  60)
-COLOR_ALGAE     = (50,  170,  140)
-COLOR_GRASS     = (120, 180,  80)
-COLOR_SHRUB     = (60,  130,  60)
-COLOR_TREE_C    = (30,   90,  40)
-COLOR_TREE_T    = (80,   55,  30)
-COLOR_WIND      = (220, 220, 255)   # light blue-white for wind streamers
-COLOR_RAIN      = (180, 210, 255)   # light blue for rain drops
+COLOR_LICHEN = (80,  110,  60)
+COLOR_ALGAE  = (50,  170, 140)
+COLOR_GRASS  = (120, 180,  80)
+COLOR_SHRUB  = (60,  130,  60)
+COLOR_TREE_C = (30,   90,  40)
+COLOR_TREE_T = (80,   55,  30)
+COLOR_WIND   = (220, 220, 255)
+COLOR_RAIN   = (180, 210, 255)
 
-OVERLAY_ALPHA   = 255
+OVERLAY_ALPHA   = 200
 MIST_ALPHA_MAX  = 200
 
-WINDOW_TITLE    = "MistLand"
 WINDOW_W        = 1024
 WINDOW_H        = 512
 INFO_BAR_H      = 24
@@ -70,21 +53,42 @@ ZOOM_DEFAULT    = 3
 INFO_FONT_SIZE  = 14
 INSPECT_FONT_SIZE = 13
 
-SPEED_STEPS     = [0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
-SPEED_DEFAULT   = 2
+SPEED_STEPS  = [0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
+SPEED_DEFAULT = 2
 
-# Overlay modes (exclusive)
 OV_NONE     = 0
 OV_WATER    = 1
 OV_TEMP     = 2
 OV_PRESSURE = 3
 OV_ALTITUDE = 5
 
-VEG_NAMES = {
-    VEG_NONE: "None", VEG_LICHENS: "Lichens",
-    VEG_GRASS: "Grass", VEG_SHRUBS: "Shrubs", VEG_TREES: "Trees",
-}
-BASE_NAMES = {BASE_BARE: "Bare", BASE_SAND: "Sand", BASE_SOIL: "Soil"}
+VEG_NAMES  = {VEG_NONE:"None", VEG_LICHENS:"Lichens",
+              VEG_GRASS:"Grass", VEG_SHRUBS:"Shrubs", VEG_TREES:"Trees"}
+BASE_NAMES = {BASE_BARE:"Bare", BASE_SAND:"Sand", BASE_SOIL:"Soil"}
+
+
+# ---------------------------------------------------------------------------
+# Renderer state
+# ---------------------------------------------------------------------------
+@dataclass
+class RendererState:
+    zoom        : int   = ZOOM_DEFAULT
+    cam_x       : float = 0.0
+    cam_y       : float = 0.0
+    overlay_mode: int   = OV_NONE
+    show_veg    : bool  = True
+    show_mist   : bool  = True
+    show_wind   : bool  = False
+    show_rain   : bool  = False
+    show_inspect: bool  = False
+    paused      : bool  = False
+    speed_idx   : int   = SPEED_DEFAULT
+    # Pan tracking
+    panning     : bool  = False
+    pan_start_mx: int   = 0
+    pan_start_my: int   = 0
+    pan_start_cx: float = 0.0
+    pan_start_cy: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -117,9 +121,9 @@ def _spectral_colour(t: np.ndarray) -> np.ndarray:
         t0, c0 = stops[i]
         t1, c1 = stops[i + 1]
         mask = (t >= t0) & (t <= t1)
-        local_t = np.where(mask, (t - t0) / (t1 - t0), 0.0)
+        lt = np.where(mask, (t - t0) / (t1 - t0), 0.0)
         for ch in range(3):
-            rgb[:, :, ch] += mask * (c0[ch] * (1 - local_t) + c1[ch] * local_t)
+            rgb[:, :, ch] += mask * (c0[ch] * (1 - lt) + c1[ch] * lt)
     return rgb.clip(0, 255).astype(np.uint8)
 
 
@@ -127,30 +131,24 @@ def _spectral_colour(t: np.ndarray) -> np.ndarray:
 # RGB builders
 # ---------------------------------------------------------------------------
 
-COLOR_LAKE = (40, 100, 200)
-
-
 def _build_base_rgb(world: World) -> np.ndarray:
     h, w = world.height, world.width
     rgb  = np.zeros((h, w, 3), dtype=np.uint8)
     rgb[world.base_type == 0] = COLOR_BARE
     rgb[world.base_type == 1] = COLOR_SAND
     rgb[world.base_type == 2] = COLOR_SOIL
-
     base_cfg     = world.config["base_types"]
     bt           = world.base_type
     flood_thresh = np.empty((h, w), dtype=np.float32)
     flood_thresh[bt == BASE_BARE] = base_cfg["bare"]["flooding_threshold"]
     flood_thresh[bt == BASE_SAND] = base_cfg["sand"]["flooding_threshold"]
     flood_thresh[bt == BASE_SOIL] = base_cfg["soil"]["flooding_threshold"]
-
     rgb[world.front.ground_water >= flood_thresh] = COLOR_LAKE
     return rgb
 
 
 def _build_altitude_rgb(world: World) -> np.ndarray:
-    t = world.altitude.astype(np.float32)
-    return _spectral_colour(t)
+    return _spectral_colour(world.altitude.astype(np.float32))
 
 
 def _water_rgb(world: World) -> np.ndarray:
@@ -159,13 +157,11 @@ def _water_rgb(world: World) -> np.ndarray:
 
 
 def _temp_rgb(world: World) -> np.ndarray:
-    t = _normalise(world.front.ground_temp)
-    return _lerp_colour((50, 80, 200), (220, 60, 30), t)
+    return _lerp_colour((50, 80, 200), (220, 60, 30), _normalise(world.front.ground_temp))
 
 
 def _pressure_rgb(world: World) -> np.ndarray:
-    t = _normalise(world.front.pressure)
-    return _lerp_colour((80, 20, 120), (240, 200, 30), t)
+    return _lerp_colour((80, 20, 120), (240, 200, 30), _normalise(world.front.pressure))
 
 
 def _compute_flooded(world: World) -> np.ndarray:
@@ -178,77 +174,68 @@ def _compute_flooded(world: World) -> np.ndarray:
     return world.front.ground_water >= thresh
 
 
-def _build_mist_surface(world: World, view_w: int, view_h: int,
-                        cam_x: float, cam_y: float, zoom: int):
+def _build_mist_surface(world, view_w, view_h, cam_x, cam_y, zoom):
     world_w, world_h = world.width, world.height
-    cell_x0 = int(cam_x)
-    cell_y0 = int(cam_y)
-    cells_x  = -(-view_w // zoom) + 1
-    cells_y  = -(-view_h // zoom) + 1
-    cell_x1  = min(cell_x0 + cells_x, world_w)
-    cell_y1  = min(cell_y0 + cells_y, world_h)
-
-    mist_crop = world.front.mist[cell_y0:cell_y1, cell_x0:cell_x1]
-    if mist_crop.size == 0:
+    cx0 = int(cam_x);  cy0 = int(cam_y)
+    cx1 = min(cx0 + (-(-view_w // zoom) + 1), world_w)
+    cy1 = min(cy0 + (-(-view_h // zoom) + 1), world_h)
+    crop = world.front.mist[cy0:cy1, cx0:cx1]
+    if crop.size == 0:
         return None
-
-    alpha     = (mist_crop.astype(np.float32) / 7.0 * MIST_ALPHA_MAX).astype(np.uint8)
-    h_crop, w_crop = mist_crop.shape
-    surf      = pygame.Surface((w_crop, h_crop), pygame.SRCALPHA)
+    alpha = (crop.astype(np.float32) / 7.0 * MIST_ALPHA_MAX).astype(np.uint8)
+    hc, wc = crop.shape
+    surf = pygame.Surface((wc, hc), pygame.SRCALPHA)
     surf.fill((255, 255, 255, 0))
-    alpha_arr = pygame.surfarray.pixels_alpha(surf)
-    alpha_arr[:, :] = alpha.transpose(1, 0)
-    del alpha_arr
-
-    scaled_w = (cell_x1 - cell_x0) * zoom
-    scaled_h = (cell_y1 - cell_y0) * zoom
-    scaled   = pygame.transform.scale(surf, (scaled_w, scaled_h))
-    return scaled, -int((cam_x - cell_x0) * zoom), -int((cam_y - cell_y0) * zoom)
+    a = pygame.surfarray.pixels_alpha(surf)
+    a[:, :] = alpha.transpose(1, 0)
+    del a
+    scaled = pygame.transform.scale(surf, ((cx1 - cx0) * zoom, (cy1 - cy0) * zoom))
+    return scaled, -int((cam_x - cx0) * zoom), -int((cam_y - cy0) * zoom)
 
 
 # ---------------------------------------------------------------------------
-# Rain overlay
+# Overlay draws
 # ---------------------------------------------------------------------------
 
-def _draw_rain_overlay(surface: pygame.Surface, world: World,
-                       cam_x: float, cam_y: float, zoom: int,
-                       view_w: int, view_h: int) -> None:
-    """
-    Draw a few random dots on cells where it is currently raining.
-    Rain condition : atmo_temp < rain_temp_threshold AND mist >= rain_humidity_threshold.
-    Dots are repositioned randomly each frame for an animated effect.
-    """
-    cfg = world.config["rain"]
-    temp_threshold     = cfg["rain_temp_threshold"]
-    humidity_threshold = cfg["rain_humidity_threshold"]
-
-    cell_x0 = int(cam_x)
-    cell_y0 = int(cam_y)
-    cells_x = -(-view_w // zoom) + 1
-    cells_y = -(-view_h // zoom) + 1
-    cell_x1 = min(cell_x0 + cells_x, world.width)
-    cell_y1 = min(cell_y0 + cells_y, world.height)
-
-    atmo_temp = world.front.atmo_temp[cell_y0:cell_y1, cell_x0:cell_x1]
-    mist      = world.front.mist     [cell_y0:cell_y1, cell_x0:cell_x1]
-
-    is_raining = (atmo_temp < temp_threshold) & (mist >= humidity_threshold)
-
-    # Number of dots per cell scales with zoom
-    n_dots = max(1, zoom // 3)
-
-    rows, cols = np.where(is_raining)
-    if len(rows) == 0:
+def _draw_wind_streamers(surface, world, cam_x, cam_y, zoom, view_w, view_h):
+    if zoom < 3:
         return
+    cx0 = int(cam_x);  cy0 = int(cam_y)
+    cx1 = min(cx0 + (-(-view_w // zoom) + 1), world.width)
+    cy1 = min(cy0 + (-(-view_h // zoom) + 1), world.height)
+    pressure  = world.front.pressure
+    half_len  = max(1, zoom * 2 // 5)
+    for cy in range(cy0, cy1):
+        for cx in range(cx0, cx1):
+            vx = float(pressure[cy, (cx-1) % world.width]  - pressure[cy, (cx+1) % world.width])
+            vy = float(pressure[(cy-1) % world.height, cx] - pressure[(cy+1) % world.height, cx])
+            mag = math.sqrt(vx*vx + vy*vy)
+            if mag < 1e-6:
+                continue
+            vx /= mag;  vy /= mag
+            scx = int((cx - cam_x + 0.5) * zoom)
+            scy = int((cy - cam_y + 0.5) * zoom)
+            pygame.draw.line(surface, COLOR_WIND,
+                             (scx - int(vx*half_len), scy - int(vy*half_len)),
+                             (scx + int(vx*half_len), scy + int(vy*half_len)), 1)
 
+
+def _draw_rain_overlay(surface, world, cam_x, cam_y, zoom, view_w, view_h):
+    cfg = world.config["rain"]
+    tt  = cfg["rain_temp_threshold"]
+    ht  = cfg["rain_humidity_threshold"]
+    cx0 = int(cam_x);  cy0 = int(cam_y)
+    cx1 = min(cx0 + (-(-view_w // zoom) + 1), world.width)
+    cy1 = min(cy0 + (-(-view_h // zoom) + 1), world.height)
+    at  = world.front.atmo_temp[cy0:cy1, cx0:cx1]
+    ms  = world.front.mist     [cy0:cy1, cx0:cx1]
+    is_flooded = world.get_flooded_mask()[cy0:cy1, cx0:cx1]
+    raining = (at < tt) & (ms >= ht) & ~is_flooded
+    n_dots  = max(1, zoom // 3)
+    rows, cols = np.where(raining)
     for row, col in zip(rows, cols):
-        cx_world = cell_x0 + col
-        cy_world = cell_y0 + row
-
-        # Top-left pixel of this cell on screen
-        px0 = int((cx_world - cam_x) * zoom)
-        py0 = int((cy_world - cam_y) * zoom)
-
+        px0 = int((cx0 + col - cam_x) * zoom)
+        py0 = int((cy0 + row - cam_y) * zoom)
         for _ in range(n_dots):
             dx = np.random.randint(0, max(1, zoom))
             dy = np.random.randint(0, max(1, zoom))
@@ -256,448 +243,289 @@ def _draw_rain_overlay(surface: pygame.Surface, world: World,
 
 
 # ---------------------------------------------------------------------------
-# Wind streamers
+# Vegetation icon
 # ---------------------------------------------------------------------------
 
-def _draw_wind_streamers(surface: pygame.Surface, world: World,
-                         cam_x: float, cam_y: float, zoom: int,
-                         view_w: int, view_h: int) -> None:
-    """
-    Draw one oriented dash per visible cell indicating wind direction.
-    Wind vector is derived from the pressure gradient :
-      vx = P[y, x-1] - P[y, x+1]  (positive = eastward)
-      vy = P[y-1, x] - P[y+1, x]  (positive = southward in screen space)
-    Dash length is fixed ; only direction is shown.
-    Dashes are hidden at zoom < 3 (too small to be readable).
-    """
-    if zoom < 3:
-        return
-
-    cell_x0 = int(cam_x)
-    cell_y0 = int(cam_y)
-    cells_x = -(-view_w // zoom) + 1
-    cells_y = -(-view_h // zoom) + 1
-    cell_x1 = min(cell_x0 + cells_x, world.width)
-    cell_y1 = min(cell_y0 + cells_y, world.height)
-
-    pressure = world.front.pressure   # (height, width)
-
-    # Dash half-length in pixels — fixed, slightly smaller than half a cell
-    half_len = max(1, zoom * 2 // 5)
-
-    for cy in range(cell_y0, cell_y1):
-        for cx in range(cell_x0, cell_x1):
-
-            # Pressure gradient → wind vector (toric neighbours)
-            px_left  = pressure[cy, (cx - 1) % world.width]
-            px_right = pressure[cy, (cx + 1) % world.width]
-            py_up    = pressure[(cy - 1) % world.height, cx]
-            py_down  = pressure[(cy + 1) % world.height, cx]
-
-            vx = float(px_left  - px_right)   # positive = eastward
-            vy = float(py_up    - py_down)     # positive = southward (screen y down)
-
-            magnitude = math.sqrt(vx * vx + vy * vy)
-            if magnitude < 1e-6:
-                continue   # no wind
-
-            # Normalise
-            vx /= magnitude
-            vy /= magnitude
-
-            # Cell centre in screen pixels
-            scx = int((cx - cam_x + 0.5) * zoom)
-            scy = int((cy - cam_y + 0.5) * zoom)
-
-            x0 = scx - int(vx * half_len)
-            y0 = scy - int(vy * half_len)
-            x1 = scx + int(vx * half_len)
-            y1 = scy + int(vy * half_len)
-
-            pygame.draw.line(surface, COLOR_WIND, (x0, y0), (x1, y1), 1)
-
-
-# ---------------------------------------------------------------------------
-# Vegetation icon drawing
-# ---------------------------------------------------------------------------
-
-def _draw_veg_icon(surface: pygame.Surface, veg_level: int,
-                   px: int, py: int, size: int,
-                   submerged: bool = False) -> None:
+def _draw_veg_icon(surface, veg_level, px, py, size, submerged=False):
     if veg_level == VEG_NONE or size < 2:
         return
-
-    cx = px + size // 2
-    cy = py + size // 2
-    s  = max(1, size)
-
+    cx = px + size // 2;  cy = py + size // 2;  s = max(1, size)
     if veg_level == VEG_LICHENS:
         if submerged:
             if size >= 4:
-                w     = max(4, s * 2 // 3)
-                amp   = max(1, s // 5)
-                steps = max(6, w)
-                x0    = px + (size - w) // 2
-                pts   = []
-                for i in range(steps + 1):
-                    x = x0 + i * w // steps
-                    y = cy + int(amp * math.sin(i * 2 * math.pi / steps * 1.5))
-                    pts.append((x, y))
+                w = max(4, s*2//3);  amp = max(1, s//5);  steps = max(6, w)
+                x0 = px + (size - w) // 2
+                pts = [(x0 + i*w//steps,
+                        cy + int(amp * math.sin(i*2*math.pi/steps*1.5)))
+                       for i in range(steps+1)]
                 if len(pts) >= 2:
-                    pygame.draw.lines(surface, COLOR_ALGAE, False, pts,
-                                      max(1, size // 6))
+                    pygame.draw.lines(surface, COLOR_ALGAE, False, pts, max(1, size//6))
             else:
                 pygame.draw.rect(surface, COLOR_ALGAE, (px, py, s, s))
         else:
-            r = max(1, s // 3)
+            r = max(1, s//3)
             pygame.draw.ellipse(surface, COLOR_LICHEN,
-                                (cx - r, cy - max(1, r // 2), r * 2, max(1, r)))
-
+                                (cx-r, cy-max(1,r//2), r*2, max(1,r)))
     elif veg_level == VEG_GRASS:
         if size >= 4:
-            h = max(2, s // 3)
-            for offset in (-s // 4, 0, s // 4):
+            h = max(2, s//3)
+            for off in (-s//4, 0, s//4):
                 pygame.draw.line(surface, COLOR_GRASS,
-                                 (cx + offset, cy + h // 2),
-                                 (cx + offset, cy - h), 1)
+                                 (cx+off, cy+h//2), (cx+off, cy-h), 1)
         else:
             pygame.draw.rect(surface, COLOR_GRASS, (px, py, s, s))
-
     elif veg_level == VEG_SHRUBS:
-        r = max(1, s // 3)
-        pygame.draw.circle(surface, COLOR_SHRUB, (cx, cy), r)
-
+        pygame.draw.circle(surface, COLOR_SHRUB, (cx, cy), max(1, s//3))
     elif veg_level == VEG_TREES:
-        r       = max(1, s // 3)
-        trunk_w = max(1, s // 6)
-        trunk_h = max(1, s // 4)
-        pygame.draw.rect(surface, COLOR_TREE_T,
-                         (cx - trunk_w // 2, cy, trunk_w, trunk_h))
-        pts = [(cx, cy - r), (cx - r, cy), (cx + r, cy)]
-        pygame.draw.polygon(surface, COLOR_TREE_C, pts)
+        r = max(1, s//3);  tw = max(1, s//6);  th = max(1, s//4)
+        pygame.draw.rect(surface, COLOR_TREE_T, (cx-tw//2, cy, tw, th))
+        pygame.draw.polygon(surface, COLOR_TREE_C,
+                            [(cx, cy-r), (cx-r, cy), (cx+r, cy)])
 
 
 # ---------------------------------------------------------------------------
 # Inspect panel
 # ---------------------------------------------------------------------------
 
-def _draw_inspect(surface: pygame.Surface, world: World,
-                  mouse_x: int, mouse_y: int,
-                  cam_x: float, cam_y: float, zoom: int,
-                  font: pygame.font.Font,
-                  is_flooded: np.ndarray) -> None:
+def _draw_inspect(surface, world, mouse_x, mouse_y,
+                  cam_x, cam_y, zoom, font, is_flooded):
     sw, sh = surface.get_size()
-
     cx = int(cam_x + mouse_x / zoom)
     cy = int(cam_y + mouse_y / zoom)
-
     if not (0 <= cx < world.width and 0 <= cy < world.height):
         return
-
     f   = world.front
     bt  = int(world.base_type[cy, cx])
-    alt = float(world.altitude[cy, cx])
-    gw  = float(f.ground_water[cy, cx])
-    gt  = float(f.ground_temp[cy, cx])
-    at  = float(f.atmo_temp[cy, cx])
-    ms  = float(f.mist[cy, cx])
-    pr  = float(f.pressure[cy, cx])
-    veg = int(f.vegetation[cy, cx])
-    fer = float(world.fertility[cy, cx])
-    nut = int(f.nutriments[cy, cx])
     fld = bool(is_flooded[cy, cx])
-
-    flood_str = "  Lake" if fld else ""
     lines = [
-        f"Cell [{cx}, {cy}]  {BASE_NAMES.get(bt, '?')}",
-        f"Alt  : {alt:.3f}",
-        f"GW   : {gw:.3f}{flood_str}",
-        f"Temp : {gt:.1f}°C / {at:.1f}°C atmo",
-        f"Mist : {ms:.2f}",
-        f"Press: {pr:.4f} bar",
-        f"Veg  : {VEG_NAMES.get(veg, '?')}",
-        f"Nutr : {nut}",
-        f"Fert : {fer:+.3f}",
+        f"Cell [{cx}, {cy}]  {BASE_NAMES.get(bt,'?')}",
+        f"Alt  : {world.altitude[cy,cx]:.3f}",
+        f"GW   : {f.ground_water[cy,cx]:.3f}{'  Lake' if fld else ''}",
+        f"Temp : {f.ground_temp[cy,cx]:.1f}°C / {f.atmo_temp[cy,cx]:.1f}°C atmo",
+        f"Mist : {f.mist[cy,cx]:.2f}",
+        f"Press: {f.pressure[cy,cx]:.4f} bar",
+        f"Veg  : {VEG_NAMES.get(int(f.vegetation[cy,cx]),'?')}",
+        f"Nutr : {int(f.nutriments[cy,cx])}",
+        f"Fert : {world.fertility[cy,cx]:+.3f}",
     ]
-
-    pad    = 6
-    line_h = font.get_linesize()
-    panel_w = max(font.size(l)[0] for l in lines) + pad * 2
-    panel_h = len(lines) * line_h + pad * 2
-
-    px = mouse_x + 14
-    py = mouse_y + 14
-    if px + panel_w > sw:
-        px = mouse_x - panel_w - 6
-    if py + panel_h > sh - INFO_BAR_H:
-        py = mouse_y - panel_h - 6
-
-    bg = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    pad = 6;  lh = font.get_linesize()
+    pw  = max(font.size(l)[0] for l in lines) + pad*2
+    ph  = len(lines)*lh + pad*2
+    px  = mouse_x + 14;  py = mouse_y + 14
+    if px + pw > sw:      px = mouse_x - pw - 6
+    if py + ph > sh - INFO_BAR_H: py = mouse_y - ph - 6
+    bg = pygame.Surface((pw, ph), pygame.SRCALPHA)
     bg.fill((10, 10, 10, 200))
     surface.blit(bg, (px, py))
-    pygame.draw.rect(surface, (100, 100, 100), (px, py, panel_w, panel_h), 1)
-
+    pygame.draw.rect(surface, (100, 100, 100), (px, py, pw, ph), 1)
     for i, line in enumerate(lines):
-        color = (220, 220, 220) if i > 0 else (255, 220, 80)
-        txt = font.render(line, True, color)
-        surface.blit(txt, (px + pad, py + pad + i * line_h))
+        surface.blit(font.render(line, True,
+                                 (255,220,80) if i==0 else (220,220,220)),
+                     (px+pad, py+pad+i*lh))
 
 
 # ---------------------------------------------------------------------------
 # Crop + scale helper
 # ---------------------------------------------------------------------------
 
-def _crop_and_scale(rgb: np.ndarray, cam_x: float, cam_y: float,
-                    zoom: int, view_w: int, view_h: int,
-                    world_w: int, world_h: int) -> tuple:
-    cell_x0 = int(cam_x)
-    cell_y0 = int(cam_y)
-    cells_x  = -(-view_w // zoom) + 1
-    cells_y  = -(-view_h // zoom) + 1
-    cell_x1  = min(cell_x0 + cells_x, world_w)
-    cell_y1  = min(cell_y0 + cells_y, world_h)
-
-    crop = rgb[cell_y0:cell_y1, cell_x0:cell_x1]
+def _crop_and_scale(rgb, cam_x, cam_y, zoom, view_w, view_h, world_w, world_h):
+    cx0 = int(cam_x);  cy0 = int(cam_y)
+    cx1 = min(cx0 + (-(-view_w // zoom) + 1), world_w)
+    cy1 = min(cy0 + (-(-view_h // zoom) + 1), world_h)
+    crop = rgb[cy0:cy1, cx0:cx1]
     if crop.size == 0:
         return None, 0, 0
-
-    surf     = pygame.surfarray.make_surface(crop.transpose(1, 0, 2))
-    scaled_w = (cell_x1 - cell_x0) * zoom
-    scaled_h = (cell_y1 - cell_y0) * zoom
-    scaled   = pygame.transform.scale(surf, (scaled_w, scaled_h))
-    return scaled, -int((cam_x - cell_x0) * zoom), -int((cam_y - cell_y0) * zoom)
+    surf   = pygame.surfarray.make_surface(crop.transpose(1, 0, 2))
+    scaled = pygame.transform.scale(surf, ((cx1-cx0)*zoom, (cy1-cy0)*zoom))
+    return scaled, -int((cam_x-cx0)*zoom), -int((cam_y-cy0)*zoom)
 
 
 # ---------------------------------------------------------------------------
-# Main loop
+# Renderer
 # ---------------------------------------------------------------------------
 
-def run(world: World) -> None:
-    pygame.init()
-    screen = pygame.display.set_mode(
-        (WINDOW_W, WINDOW_H + INFO_BAR_H),
-        pygame.RESIZABLE
-    )
-    pygame.display.set_caption(WINDOW_TITLE)
-    clock        = pygame.time.Clock()
-    font         = pygame.font.SysFont("monospace", INFO_FONT_SIZE)
-    inspect_font = pygame.font.SysFont("monospace", INSPECT_FONT_SIZE)
+class Renderer:
+    """
+    Stateful renderer for MistLand.
+    Call render(screen, world) every frame.
+    Call handle_event(event, world) for each pygame event.
+    """
 
-    world_w      = world.width
-    world_h      = world.height
-    altitude_rgb = _build_altitude_rgb(world)
+    def __init__(self, world: World):
+        self.state        = RendererState()
+        self.altitude_rgb = _build_altitude_rgb(world)
+        self._font        = None
+        self._ifont       = None
 
-    zoom  = ZOOM_DEFAULT
-    cam_x = 0.0
-    cam_y = 0.0
+    def init_fonts(self) -> None:
+        self._font  = pygame.font.SysFont("monospace", INFO_FONT_SIZE)
+        self._ifont = pygame.font.SysFont("monospace", INSPECT_FONT_SIZE)
 
-    panning      = False
-    pan_start_mx = 0
-    pan_start_my = 0
-    pan_start_cx = 0.0
-    pan_start_cy = 0.0
+    def clamp_camera(self, screen_size: tuple, world: World) -> None:
+        sw, sh = screen_size
+        s = self.state
+        vw = sw / s.zoom;  vh = (sh - INFO_BAR_H) / s.zoom
+        s.cam_x = max(0.0, min(s.cam_x, max(0.0, world.width  - vw)))
+        s.cam_y = max(0.0, min(s.cam_y, max(0.0, world.height - vh)))
 
-    overlay_mode = OV_NONE
-    show_veg     = True
-    show_mist    = True
-    show_wind    = False
-    show_rain    = False
-    show_inspect = False
+    def render(self, screen: pygame.Surface, world: World) -> None:
+        if self._font is None:
+            self.init_fonts()
 
-    paused     = False
-    speed_idx  = SPEED_DEFAULT
-    tick_accum = 0.0
-    running    = True
-
-    def clamp_camera():
-        nonlocal cam_x, cam_y
-        sw, sh = screen.get_size()
-        view_w = sw / zoom
-        view_h = (sh - INFO_BAR_H) / zoom
-        cam_x = max(0.0, min(cam_x, max(0.0, world_w - view_w)))
-        cam_y = max(0.0, min(cam_y, max(0.0, world_h - view_h)))
-
-    def render():
+        s   = self.state
         sw, sh  = screen.get_size()
-        view_w  = sw
-        view_h  = sh - INFO_BAR_H
-
+        vw, vh  = sw, sh - INFO_BAR_H
+        ww, wh  = world.width, world.height
         is_flooded = _compute_flooded(world)
 
         # Base layer
         base_surf, ox, oy = _crop_and_scale(
-            _build_base_rgb(world), cam_x, cam_y, zoom, view_w, view_h, world_w, world_h)
-        screen.fill(COLOR_BG, (0, 0, sw, view_h))
+            _build_base_rgb(world), s.cam_x, s.cam_y, s.zoom, vw, vh, ww, wh)
+        screen.fill(COLOR_BG, (0, 0, sw, vh))
         if base_surf:
             screen.blit(base_surf, (ox, oy))
 
-        # Data overlay (exclusive)
-        if overlay_mode != OV_NONE:
-            if overlay_mode == OV_WATER:
-                ov_rgb = _water_rgb(world)
-            elif overlay_mode == OV_TEMP:
-                ov_rgb = _temp_rgb(world)
-            elif overlay_mode == OV_PRESSURE:
-                ov_rgb = _pressure_rgb(world)
-            else:
-                ov_rgb = altitude_rgb
-
-            ov_surf, ox2, oy2 = _crop_and_scale(
-                ov_rgb, cam_x, cam_y, zoom, view_w, view_h, world_w, world_h)
+        # Exclusive data overlay
+        if s.overlay_mode != OV_NONE:
+            if   s.overlay_mode == OV_WATER:    ov_rgb = _water_rgb(world)
+            elif s.overlay_mode == OV_TEMP:     ov_rgb = _temp_rgb(world)
+            elif s.overlay_mode == OV_PRESSURE: ov_rgb = _pressure_rgb(world)
+            else:                               ov_rgb = self.altitude_rgb
+            ov_surf, ox2, oy2 = _crop_and_scale(ov_rgb, s.cam_x, s.cam_y,
+                                                 s.zoom, vw, vh, ww, wh)
             if ov_surf:
-                if overlay_mode != OV_ALTITUDE:
+                if s.overlay_mode != OV_ALTITUDE:
                     ov_surf.set_alpha(OVERLAY_ALPHA)
                 screen.blit(ov_surf, (ox2, oy2))
 
         # Vegetation icons
-        if show_veg and zoom >= 4:
-            cell_x0 = int(cam_x)
-            cell_y0 = int(cam_y)
-            cells_x = -(-view_w // zoom) + 1
-            cells_y = -(-view_h // zoom) + 1
-            cell_x1 = min(cell_x0 + cells_x, world_w)
-            cell_y1 = min(cell_y0 + cells_y, world_h)
+        if s.show_veg and s.zoom >= 4:
+            cx0 = int(s.cam_x);  cy0 = int(s.cam_y)
+            cx1 = min(cx0 + (-(-vw // s.zoom) + 1), ww)
+            cy1 = min(cy0 + (-(-vh // s.zoom) + 1), wh)
             veg = world.front.vegetation
-            for cy in range(cell_y0, cell_y1):
-                for cx in range(cell_x0, cell_x1):
-                    level = int(veg[cy, cx])
-                    if level == VEG_NONE:
+            for cy in range(cy0, cy1):
+                for cx in range(cx0, cx1):
+                    lv = int(veg[cy, cx])
+                    if lv == VEG_NONE:
                         continue
-                    submerged = bool(is_flooded[cy, cx])
-                    px = int((cx - cam_x) * zoom)
-                    py = int((cy - cam_y) * zoom)
-                    _draw_veg_icon(screen, level, px, py, zoom, submerged)
+                    _draw_veg_icon(screen, lv,
+                                   int((cx - s.cam_x) * s.zoom),
+                                   int((cy - s.cam_y) * s.zoom),
+                                   s.zoom, bool(is_flooded[cy, cx]))
 
-        # Mist overlay
-        if show_mist:
-            result = _build_mist_surface(world, view_w, view_h, cam_x, cam_y, zoom)
-            if result is not None:
-                mist_surf, mx, my = result
-                screen.blit(mist_surf, (mx, my))
+        # Mist
+        if s.show_mist:
+            r = _build_mist_surface(world, vw, vh, s.cam_x, s.cam_y, s.zoom)
+            if r:
+                screen.blit(r[0], (r[1], r[2]))
 
         # Wind streamers
-        if show_wind:
-            _draw_wind_streamers(screen, world, cam_x, cam_y, zoom, view_w, view_h)
+        if s.show_wind:
+            _draw_wind_streamers(screen, world, s.cam_x, s.cam_y, s.zoom, vw, vh)
 
-        # Rain overlay
-        if show_rain and not paused:
-            _draw_rain_overlay(screen, world, cam_x, cam_y, zoom, view_w, view_h)
+        # Rain
+        if s.show_rain and not s.paused:
+            _draw_rain_overlay(screen, world, s.cam_x, s.cam_y, s.zoom, vw, vh)
 
-        # Inspect panel
-        if show_inspect:
+        # Inspect
+        if s.show_inspect and self._ifont:
             mx, my = pygame.mouse.get_pos()
-            if my < view_h:
-                _draw_inspect(screen, world, mx, my, cam_x, cam_y, zoom,
-                              inspect_font, is_flooded)
+            if my < vh:
+                _draw_inspect(screen, world, mx, my,
+                              s.cam_x, s.cam_y, s.zoom, self._ifont, is_flooded)
 
         # Info bar
-        info_rect = pygame.Rect(0, sh - INFO_BAR_H, sw, INFO_BAR_H)
-        pygame.draw.rect(screen, (20, 20, 20), info_rect)
-
-        ov_names = {
-            OV_NONE: "---", OV_WATER: "water",
-            OV_TEMP: "temp", OV_PRESSURE: "pressure",
-            OV_ALTITUDE: "altitude",
-        }
-        speed_str   = f"{SPEED_STEPS[speed_idx]:.2f}".rstrip('0').rstrip('.') + " t/s"
-        state_str   = "PAUSED" if paused else speed_str
-        inspect_str = "on" if show_inspect else "off"
-
-        info_str = (
-            f"Tick {world.tick_count:5d}  |  "
-            f"Zoom {zoom:2d}x  |  [{state_str}]  "
-            f"Overlay:{ov_names[overlay_mode]}  "
-            f"Veg:{'on' if show_veg else 'off'}  "
-            f"Mist:{'on' if show_mist else 'off'}  "
-            f"Wind:{'on' if show_wind else 'off'}  "
-            f"Rain:{'on' if show_rain else 'off'}  "
-            f"Inspect:{inspect_str}  |  "
+        pygame.draw.rect(screen, (20, 20, 20), (0, sh-INFO_BAR_H, sw, INFO_BAR_H))
+        ov_names = {OV_NONE:"---", OV_WATER:"water", OV_TEMP:"temp",
+                    OV_PRESSURE:"pressure", OV_ALTITUDE:"altitude"}
+        spd = f"{SPEED_STEPS[s.speed_idx]:.2f}".rstrip('0').rstrip('.') + " t/s"
+        info = (
+            f"Tick {world.tick_count:5d}  |  Zoom {s.zoom:2d}x  |  "
+            f"[{'PAUSED' if s.paused else spd}]  "
+            f"Ov:{ov_names[s.overlay_mode]}  "
+            f"Veg:{'on' if s.show_veg else 'off'}  "
+            f"Mist:{'on' if s.show_mist else 'off'}  "
+            f"Wind:{'on' if s.show_wind else 'off'}  "
+            f"Rain:{'on' if s.show_rain else 'off'}  "
+            f"Inspect:{'on' if s.show_inspect else 'off'}  |  "
             f"[SPC]step [A]pause [PgUp/Dn]speed "
-            f"[1]water [2]temp [3]press [4]veg [5]alt [6]mist [7]wind [8]rain [I]inspect  [ESC]quit"
+            f"[1-3,5]overlay [4]veg [6]mist [7]wind [8]rain [I]inspect"
         )
-        text_surf = font.render(info_str, True, (180, 180, 180))
-        screen.blit(text_surf, (8, sh - INFO_BAR_H + 4))
-
+        screen.blit(self._font.render(info, True, (180,180,180)), (8, sh-INFO_BAR_H+4))
         pygame.display.flip()
 
-    while running:
-        dt = clock.tick(60) / 1000.0
+    def handle_event(self, event: pygame.event.Event,
+                     world: World, screen_size: tuple) -> set:
+        """Process one pygame event. Returns set of action strings."""
+        actions = set()
+        s = self.state
+        sw, sh = screen_size
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_ESCAPE, pygame.K_q):
-                    running = False
-                elif event.key == pygame.K_SPACE:
-                    if paused:
-                        world.tick()
-                elif event.key == pygame.K_a:
-                    paused = not paused
-                    tick_accum = 0.0
-                elif event.key == pygame.K_PAGEUP:
-                    speed_idx = min(speed_idx + 1, len(SPEED_STEPS) - 1)
-                    tick_accum = 0.0
-                elif event.key == pygame.K_PAGEDOWN:
-                    speed_idx = max(speed_idx - 1, 0)
-                    tick_accum = 0.0
-                elif event.key == pygame.K_1:
-                    overlay_mode = OV_NONE if overlay_mode == OV_WATER    else OV_WATER
-                elif event.key == pygame.K_2:
-                    overlay_mode = OV_NONE if overlay_mode == OV_TEMP     else OV_TEMP
-                elif event.key == pygame.K_3:
-                    overlay_mode = OV_NONE if overlay_mode == OV_PRESSURE else OV_PRESSURE
-                elif event.key == pygame.K_4:
-                    show_veg = not show_veg
-                elif event.key == pygame.K_5:
-                    overlay_mode = OV_NONE if overlay_mode == OV_ALTITUDE else OV_ALTITUDE
-                elif event.key == pygame.K_6:
-                    show_mist = not show_mist
-                elif event.key == pygame.K_7:
-                    show_wind = not show_wind
-                elif event.key == pygame.K_8:
-                    show_rain = not show_rain
-                elif event.key == pygame.K_i:
-                    show_inspect = not show_inspect
+        if event.type == pygame.QUIT:
+            actions.add('quit')
 
-            elif event.type == pygame.MOUSEWHEEL:
-                mx, my = pygame.mouse.get_pos()
-                world_mx = cam_x + mx / zoom
-                world_my = cam_y + my / zoom
-                zoom = max(ZOOM_MIN, min(ZOOM_MAX, zoom + event.y))
-                cam_x = world_mx - mx / zoom
-                cam_y = world_my - my / zoom
-                clamp_camera()
+        elif event.type == pygame.KEYDOWN:
+            k = event.key
+            if k in (pygame.K_ESCAPE, pygame.K_q):
+                actions.add('quit')
+            elif k == pygame.K_SPACE:
+                if s.paused:
+                    actions.add('step')
+            elif k == pygame.K_a:
+                actions.add('toggle_pause')
+            elif k == pygame.K_PAGEUP:
+                actions.add('speed_up')
+            elif k == pygame.K_PAGEDOWN:
+                actions.add('speed_down')
+            elif k == pygame.K_1:
+                s.overlay_mode = OV_NONE if s.overlay_mode == OV_WATER    else OV_WATER
+            elif k == pygame.K_2:
+                s.overlay_mode = OV_NONE if s.overlay_mode == OV_TEMP     else OV_TEMP
+            elif k == pygame.K_3:
+                s.overlay_mode = OV_NONE if s.overlay_mode == OV_PRESSURE else OV_PRESSURE
+            elif k == pygame.K_4:
+                s.show_veg = not s.show_veg
+            elif k == pygame.K_5:
+                s.overlay_mode = OV_NONE if s.overlay_mode == OV_ALTITUDE else OV_ALTITUDE
+            elif k == pygame.K_6:
+                s.show_mist = not s.show_mist
+            elif k == pygame.K_7:
+                s.show_wind = not s.show_wind
+            elif k == pygame.K_8:
+                s.show_rain = not s.show_rain
+            elif k == pygame.K_i:
+                s.show_inspect = not s.show_inspect
 
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button in (2, 3):
-                    panning      = True
-                    pan_start_mx, pan_start_my = event.pos
-                    pan_start_cx = cam_x
-                    pan_start_cy = cam_y
+        elif event.type == pygame.MOUSEWHEEL:
+            mx, my = pygame.mouse.get_pos()
+            wx = s.cam_x + mx / s.zoom
+            wy = s.cam_y + my / s.zoom
+            s.zoom = max(ZOOM_MIN, min(ZOOM_MAX, s.zoom + event.y))
+            s.cam_x = wx - mx / s.zoom
+            s.cam_y = wy - my / s.zoom
+            self.clamp_camera(screen_size, world)
 
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button in (2, 3):
-                    panning = False
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button in (2, 3):
+                s.panning = True
+                s.pan_start_mx, s.pan_start_my = event.pos
+                s.pan_start_cx = s.cam_x
+                s.pan_start_cy = s.cam_y
 
-            elif event.type == pygame.MOUSEMOTION:
-                if panning:
-                    dx = (event.pos[0] - pan_start_mx) / zoom
-                    dy = (event.pos[1] - pan_start_my) / zoom
-                    cam_x = pan_start_cx - dx
-                    cam_y = pan_start_cy - dy
-                    clamp_camera()
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button in (2, 3):
+                s.panning = False
 
-            elif event.type == pygame.VIDEORESIZE:
-                clamp_camera()
+        elif event.type == pygame.MOUSEMOTION:
+            if s.panning:
+                dx = (event.pos[0] - s.pan_start_mx) / s.zoom
+                dy = (event.pos[1] - s.pan_start_my) / s.zoom
+                s.cam_x = s.pan_start_cx - dx
+                s.cam_y = s.pan_start_cy - dy
+                self.clamp_camera(screen_size, world)
 
-        if not paused:
-            tick_accum += dt
-            interval = 1.0 / SPEED_STEPS[speed_idx]
-            while tick_accum >= interval:
-                world.tick()
-                tick_accum -= interval
+        elif event.type == pygame.VIDEORESIZE:
+            self.clamp_camera(screen_size, world)
 
-        render()
-
-    pygame.quit()
+        return actions

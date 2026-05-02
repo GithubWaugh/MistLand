@@ -27,10 +27,13 @@ def step(world: "World") -> None:
     f = world.front
     b = world.back
 
+    is_flooded = world.get_flooded_mask()  # precompute flooded mask for efficiency
+
     # Cells where rain occurs
     is_raining = (
         (f.atmo_temp < temp_threshold) &
-        (f.mist >= humidity_threshold)
+        (f.mist >= humidity_threshold) &
+        ~is_flooded   # pas de pluie sur les lacs déjà saturés
     )
 
     # Mist lost this tick (float)

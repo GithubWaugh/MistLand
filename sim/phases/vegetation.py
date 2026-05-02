@@ -38,6 +38,7 @@ import numpy as np
 if TYPE_CHECKING:
     from sim.world import World
 
+from sim.phases.evaporation import MIST_UNIT
 from sim.world import VEG_NONE, VEG_LICHENS, VEG_GRASS, VEG_SHRUBS, VEG_TREES
 from sim.world import BASE_BARE, BASE_SAND, BASE_SOIL
 
@@ -122,11 +123,18 @@ def step(world: "World") -> None:
     temp_ok   = (f.ground_temp >= temp_min) & (f.ground_temp <= temp_max)
     nut_ok    = nut.astype(np.float32) >= eff_nut_min
     timer_ok  = counter >= growth_period
+    # Lichens et grass peuvent utiliser l'humidité de l'air
+    mist_ok  = f.mist >= cfg.get("mist_water_threshold", 3.0)
 
     can_grow  = water_ok & temp_ok & timer_ok & (veg < veg_max)
 
-    lichen_growth = can_grow & (veg == VEG_NONE)
-    normal_growth = can_grow & (veg > VEG_NONE) & nut_ok
+    # Lichens : sol OU mist suffisant
+    lichen_growth = can_grow & (veg == VEG_NONE) & (water_ok | mist_ok)
+
+    # Grass : sol ET (eau OU mist) — plus exigeant
+    normal_growth = can_grow & (veg > VEG_NONE) & nut_ok & (
+        water_ok | (mist_ok & (veg == VEG_LICHENS))
+    )
 
     grows = lichen_growth | normal_growth
 
@@ -136,16 +144,28 @@ def step(world: "World") -> None:
     devolves = stress & ~immune & (veg > VEG_NONE) & ~grows & ~is_flooded
 
     # --- Apply growth ---
+    # Source d'eau pour la croissance
+    using_mist = grows & (veg == VEG_NONE) & ~water_ok & mist_ok
+
+    # Eau consommée depuis le sol (cas normal)
     water_consumed = np.where(
-        grows & (veg > VEG_NONE),
-        cost_water,
-        0.0
+        grows & (veg > VEG_NONE) & ~using_mist,
+        cost_water, 0.0
     ).astype(np.float32)
-
     water_consumed = np.minimum(water_consumed, gw)
-
     gw    -= water_consumed
     veg_w += water_consumed
+
+    # Eau consommée depuis le mist (lichen depuis humidité)
+    mist_consumed = np.where(
+        using_mist,
+        cost_water / MIST_UNIT,  # convertir en unités mist
+        0.0
+    ).astype(np.float32)
+    mist_consumed = np.minimum(mist_consumed, f.mist)
+    # mist est lu depuis front — on écrit dans back
+    b.mist = np.clip(f.mist - mist_consumed, 0.0, 7.0).astype(np.float32)
+    veg_w += (mist_consumed * MIST_UNIT).astype(np.float32)
 
     nut = np.where(
         grows & (veg > VEG_NONE),

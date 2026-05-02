@@ -113,3 +113,12 @@ class World:
             f"Water {self.total_water():.2f} | "
             f"Energy {self.total_energy():.2f}"
         )
+
+    def get_flooded_mask(self) -> np.ndarray:
+        base_cfg = self.config["base_types"]
+        bt = self.base_type
+        thresh = np.empty((self.height, self.width), dtype=np.float32)
+        thresh[bt == 0] = base_cfg["bare"]["flooding_threshold"]
+        thresh[bt == 1] = base_cfg["sand"]["flooding_threshold"]
+        thresh[bt == 2] = base_cfg["soil"]["flooding_threshold"]
+        return self.front.ground_water >= thresh

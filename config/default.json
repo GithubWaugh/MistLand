@@ -120,6 +120,8 @@
     "_comment_nutriments_min": "Minimum nutriments required for growth (except lichens). Modulated by fertility (±fertility_nut_range).",
     "growth_cost_water": 0.05,
     "_comment_growth_cost_water": "Ground water consumed on each growth step (moved to vegetation_water store).",
+    "mist_water_threshold": 3.0,
+    "_comment_mist_water_threshold": "Minimum mist level required for lichen growth.",
     "growth_cost_nutriments": 10,
     "_comment_growth_cost_nutriments": "Nutriments consumed on each growth step.",
     "water_stored_per_level": 0.05,
