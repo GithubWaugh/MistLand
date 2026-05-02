@@ -172,22 +172,58 @@ def step(world: "World") -> None:
         default=0
     ).astype(np.int16)
 
+    # --- Water requirement and cost per plant type ---
+    water_req_lichens = plants_cfg.get("lichens", {}).get("growth_requirements", {}).get("water", water_min)
+    water_req_grass   = plants_cfg.get("grass",   {}).get("growth_requirements", {}).get("water", water_min)
+    water_req_shrubs  = plants_cfg.get("shrubs",  {}).get("growth_requirements", {}).get("water", water_min)
+    water_req_trees   = plants_cfg.get("trees",   {}).get("growth_requirements", {}).get("water", water_min)
+
+    water_req = np.select(
+        [veg == VEG_NONE, veg == VEG_LICHENS, veg == VEG_GRASS, veg == VEG_SHRUBS],
+        [water_req_lichens, water_req_grass, water_req_shrubs, water_req_trees],
+        default=water_min
+    ).astype(np.float32)
+    eff_water_req = (water_req - fer * fertility_water_range).astype(np.float32)
+
+    cost_water_lichens = plants_cfg.get("lichens", {}).get("growth_costs", {}).get("water", cost_water)
+    cost_water_grass   = plants_cfg.get("grass",   {}).get("growth_costs", {}).get("water", cost_water)
+    cost_water_shrubs  = plants_cfg.get("shrubs",  {}).get("growth_costs", {}).get("water", cost_water)
+    cost_water_trees   = plants_cfg.get("trees",   {}).get("growth_costs", {}).get("water", cost_water)
+
+    cost_water_growth = np.select(
+        [veg == VEG_NONE, veg == VEG_LICHENS, veg == VEG_GRASS, veg == VEG_SHRUBS],
+        [cost_water_lichens, cost_water_grass, cost_water_shrubs, cost_water_trees],
+        default=cost_water
+    ).astype(np.float32)
+
     # --- Growth conditions ---
-    water_ok  = gw >= eff_water_min
+    water_ok        = gw >= eff_water_min    # global — used for devolution stress
+    water_ok_growth = gw >= eff_water_req    # per-plant — used for growth gating
     temp_ok   = (f.ground_temp >= temp_min) & (f.ground_temp <= temp_max)
     nut_ok    = nut.astype(np.float32) >= eff_nut_req
     timer_ok  = counter >= growth_period
-    # Lichens et grass peuvent utiliser l'humidité de l'air
-    mist_ok  = f.mist >= cfg.get("mist_water_threshold", 3.0)
+    # Lichens et grass peuvent utiliser l'humidité de l'air — seuil par type de plante
+    _mist_default = cfg.get("mist_water_threshold", 3.0)
+    mist_req_lichens = plants_cfg.get("lichens", {}).get("growth_requirements", {}).get("mist", _mist_default)
+    mist_req_grass   = plants_cfg.get("grass",   {}).get("growth_requirements", {}).get("mist", _mist_default)
+    mist_req_shrubs  = plants_cfg.get("shrubs",  {}).get("growth_requirements", {}).get("mist", _mist_default)
+    mist_req_trees   = plants_cfg.get("trees",   {}).get("growth_requirements", {}).get("mist", _mist_default)
 
-    can_grow  = water_ok & temp_ok_growth & timer_ok & (veg < veg_max) & altitude_ok
+    mist_req = np.select(
+        [veg == VEG_NONE, veg == VEG_LICHENS, veg == VEG_GRASS, veg == VEG_SHRUBS],
+        [mist_req_lichens, mist_req_grass, mist_req_shrubs, mist_req_trees],
+        default=_mist_default
+    ).astype(np.float32)
+    mist_ok = f.mist >= mist_req
+
+    can_grow  = water_ok_growth & temp_ok_growth & timer_ok & (veg < veg_max) & altitude_ok
 
     # Lichens : sol OU mist suffisant - ajout de nutriment aussi pour les lichens, moins exigeants que les autres
-    lichen_growth = can_grow & (veg == VEG_NONE) & (water_ok | mist_ok) & nut_ok
+    lichen_growth = can_grow & (veg == VEG_NONE) & (water_ok_growth | mist_ok) & nut_ok
 
     # Grass : sol ET (eau OU mist) — plus exigeant
     normal_growth = can_grow & (veg > VEG_NONE) & nut_ok & (
-        water_ok | (mist_ok & (veg == VEG_LICHENS))
+        water_ok_growth | (mist_ok & (veg == VEG_LICHENS))
     )
 
     grows = lichen_growth | normal_growth
@@ -204,7 +240,7 @@ def step(world: "World") -> None:
     # Eau consommée depuis le sol (cas normal)
     water_consumed = np.where(
         grows & (veg > VEG_NONE) & ~using_mist,
-        cost_water, 0.0
+        cost_water_growth, 0.0
     ).astype(np.float32)
     water_consumed = np.minimum(water_consumed, gw)
     gw    -= water_consumed
@@ -213,7 +249,7 @@ def step(world: "World") -> None:
     # Eau consommée depuis le mist (lichen depuis humidité)
     mist_consumed = np.where(
         using_mist,
-        cost_water / MIST_UNIT,  # convertir en unités mist
+        cost_water_growth / MIST_UNIT,  # convertir en unités mist
         0.0
     ).astype(np.float32)
     mist_consumed = np.minimum(mist_consumed, f.mist)
@@ -264,7 +300,20 @@ def step(world: "World") -> None:
     albedo[bt == BASE_BARE] = base_cfg["bare"]["albedo_base"]
     albedo[bt == BASE_SAND] = base_cfg["sand"]["albedo_base"]
     albedo[bt == BASE_SOIL] = base_cfg["soil"]["albedo_base"]
-    albedo -= veg.astype(np.float32) * alb_reduction
+    alb_red_lichens = plants_cfg.get("lichens", {}).get("albedo_reduction", alb_reduction)
+    alb_red_grass   = plants_cfg.get("grass",   {}).get("albedo_reduction", alb_reduction)
+    alb_red_shrubs  = plants_cfg.get("shrubs",  {}).get("albedo_reduction", alb_reduction)
+    alb_red_trees   = plants_cfg.get("trees",   {}).get("albedo_reduction", alb_reduction)
+
+    alb_cum = np.array([
+        0.0,
+        alb_red_lichens,
+        alb_red_lichens + alb_red_grass,
+        alb_red_lichens + alb_red_grass + alb_red_shrubs,
+        alb_red_lichens + alb_red_grass + alb_red_shrubs + alb_red_trees,
+    ], dtype=np.float32)
+
+    albedo -= alb_cum[veg]
     albedo  = np.clip(albedo, 0.05, 1.0).astype(np.float32)
 
     # --- Apply to back buffer ---
