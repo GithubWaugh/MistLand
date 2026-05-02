@@ -15,7 +15,7 @@ from sim.phases.evaporation import MIST_UNIT
 
 
 CONFIG_PATH = "config/default.json"
-SEED        = 4321
+SEED        = 321
 
 # Set to True to run console-only diagnostics instead of UI
 CONSOLE_MODE = False

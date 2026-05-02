@@ -184,9 +184,9 @@ def _distribute_water(world: World) -> None:
     weight  = 1.0 - world.altitude
     weight  = np.clip(weight, 0.1, None)
     weight /= weight.sum()
-    world.front.ground_water = (weight * total * n_cells).astype(np.float32)
+    #world.front.ground_water = (weight * total * n_cells).astype(np.float32)
     # Water is distributed as mist instead of ground water, to give more dynamic range for evaporation in early ticks.
-    #world.front.mist = 8 * (weight * total * n_cells).astype(np.float32)
+    world.front.mist = 8 * (weight * total * n_cells).astype(np.float32)
 
 
 # ------------------------------------------------------------------

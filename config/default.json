@@ -3,15 +3,15 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
-    "grid_width": 256,
-    "grid_height": 128,
+    "grid_width": 512,
+    "grid_height": 256,
     "total_water": 1,
     "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
     "total_energy": 50000,
     "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation).",
-    "solar_radiation": 0.5,
+    "solar_radiation": 0.25,
     "_comment_solar_radiation": "Base solar energy input per tick. Modulated by day/night cycle and albedo. Higher = more energy, higher temperatures, more evaporation.",
-    "sun_rotation_speed": 100,
+    "sun_rotation_speed": 200,
     "_comment_sun_rotation_speed": "Speed of the sun's rotation around the world. Higher = faster day/night cycle."
   },
 
@@ -60,16 +60,18 @@
     "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
     "k_temp": 0.005,
     "_comment_k_temp": "Weight of temperature deviation in pressure formula. Higher = temperature has more influence on wind.",
-    "k_alt": 0.01,
+    "k_alt": 0.1,
     "_comment_k_alt": "Weight of altitude in pressure formula. Higher = mountains create stronger pressure gradients.",
     "temp_ref": 29.0,
     "_comment_temp_ref": "Reference temperature (°C) at which pressure equals P_base. Cells warmer than this have lower pressure.",
-    "k_wind": 0.25,
+    "k_wind": 1,
     "_comment_k_wind": "Wind strength coefficient. wind(A→B) = k_wind * (pressure(A) - pressure(B)). Higher = stronger winds.",
     "pressure_damping": 0.1,
     "_comment_pressure_damping": "How fast pressure converges toward its target each tick. 1.0 = instant, 0.1 = slow drift (more stable).",
     "wind_transport_rate": 0.25,
-    "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick."
+    "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick.",
+    "mist_diffusion_rate": 0.02,
+    "mist_advection_rate": 0.075
   },
 
   "water": {
@@ -86,11 +88,11 @@
 
   "rain": {
     "_comment": "Controls precipitation. Rain occurs when atmo_temp < threshold AND mist >= humidity_threshold.",
-    "rain_temp_threshold": 50.0,
+    "rain_temp_threshold": 35.0,
     "_comment_rain_temp_threshold": "Atmospheric temperature (°C) below which rain can occur. Raise to make rain more frequent.",
-    "rain_humidity_threshold": 4,
+    "rain_humidity_threshold": 3,
     "_comment_rain_humidity_threshold": "Minimum mist level [0..7] required to trigger rain. Lower = rain more easily.",
-    "rain_rate": 0.05,
+    "rain_rate": 0.02,
     "_comment_rain_rate": "Fraction of mist converted to ground water per rainy tick."
   },
 
@@ -110,13 +112,13 @@
     "_comment_growth_period_ticks": "Minimum ticks between two growth events for a cell. Counter resets to a random value in [0, period/2] on each change (desynchronisation).",
     "water_min": 0.04,
     "_comment_water_min": "Minimum ground_water required for growth. Modulated by fertility (±fertility_water_range).",
-    "temp_min": 0.0,
+    "temp_min": -20.0,
     "_comment_temp_min": "Minimum ground temperature (°C) for growth.",
-    "temp_max": 40.0,
+    "temp_max": 45.0,
     "_comment_temp_max": "Maximum ground temperature (°C) for growth.",
     "nutriments_min": 10,
     "_comment_nutriments_min": "Minimum nutriments required for growth (except lichens). Modulated by fertility (±fertility_nut_range).",
-    "growth_cost_water": 0.1,
+    "growth_cost_water": 0.05,
     "_comment_growth_cost_water": "Ground water consumed on each growth step (moved to vegetation_water store).",
     "growth_cost_nutriments": 10,
     "_comment_growth_cost_nutriments": "Nutriments consumed on each growth step.",
