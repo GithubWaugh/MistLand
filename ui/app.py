@@ -282,9 +282,10 @@ def _draw_inspect(surface, world, mx, my, cam_x, cam_y, zoom, font, is_flooded):
     f=world.front; bt=int(world.base_type[cy,cx]); fld=bool(is_flooded[cy,cx])
     wxv=float(f.wind_x[cy,cx]); wyv=float(f.wind_y[cy,cx])
     spd=math.sqrt(wxv**2+wyv**2)
+    real_altitude = world.altitude[cy,cx] + world.front.ground_water[cy,cx]*world.config["water"]["water_to_altitude"]
     lines=[
         f"Cell [{cx},{cy}]  {BASE_NAMES.get(bt,'?')}",
-        f"Alt  : {world.altitude[cy,cx]:.3f}",
+        f"Alt  : {real_altitude:.3f}",
         f"GW   : {f.ground_water[cy,cx]:.3f}{'  Lake' if fld else ''}",
         f"Temp : {f.ground_temp[cy,cx]:.1f}°C / {f.atmo_temp[cy,cx]:.1f}°C atmo",
         f"Mist : {f.mist[cy,cx]:.2f}",

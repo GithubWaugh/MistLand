@@ -73,7 +73,7 @@
     "wind_transport_rate": 0.25,
     "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick.",
     "mist_diffusion_rate": 0.02,
-    "mist_advection_rate": 0.075,
+    "mist_advection_rate": 0.2,
     "wind_advection_strength": 0.1,
     "wind_viscosity": 0.01,
     "wind_damping": 0.995,
