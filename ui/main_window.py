@@ -52,7 +52,7 @@ class MainWindow:
         # Map Tkinter keysym to pygame key constant
         keymap = {
             "space": pygame.K_SPACE,
-            "a": pygame.K_a, "q": pygame.K_q, "i": pygame.K_i,
+            "a": pygame.K_a, "q": pygame.K_q, "i": pygame.K_i, "m": pygame.K_m,
             # Chiffres avec et sans shift (AZERTY)
             "1": pygame.K_1, "ampersand":    pygame.K_1,   # &
             "2": pygame.K_2, "eacute":       pygame.K_2,   # é

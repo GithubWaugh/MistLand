@@ -90,7 +90,7 @@ def step(world: "World") -> None:
     n = len(_NEIGHBOURS)
     for dr, dc in _NEIGHBOURS:
         nb_mist   = np.roll(np.roll(f.mist, dr, axis=0), dc, axis=1)
-        diff_flux = (5*diffusion_rate / n * (f.mist - nb_mist)).astype(np.float32)
+        diff_flux = (diffusion_rate / n * (f.mist - nb_mist)).astype(np.float32)
         new_mist -= diff_flux
         new_mist += np.roll(np.roll(diff_flux, -dr, axis=0), -dc, axis=1)
 

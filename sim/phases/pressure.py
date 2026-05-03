@@ -5,7 +5,7 @@ Phase 2 : Atmospheric pressure computation.
 Formula :
     pressure(cell) = P_base
                    - k_temp * (atmo_temp - temp_ref)
-                   + k_alt  * altitude
+                   - k_alt  * altitude 
 
 - Cell at temp_ref → pressure = P_base (neutral)
 - Hot air  → low pressure  (air expands and rises)
@@ -40,7 +40,7 @@ def step(world: "World") -> None:
     target = (
         P_base
         - k_temp * (world.front.atmo_temp - temp_ref)
-        + k_alt  * effective_alt
+        - k_alt  * effective_alt # world.altitude # effective_alt // could be used for more realism, but generate no wind
     ).astype(np.float32)
 
     # Smooth transition toward target
