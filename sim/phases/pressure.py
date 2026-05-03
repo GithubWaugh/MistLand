@@ -34,7 +34,14 @@ def step(world: "World") -> None:
     damping  = cfg["pressure_damping"]
 
     water_to_alt = world.config["water"].get("water_to_altitude", 0.1)
-    effective_alt = world.altitude + world.front.ground_water * water_to_alt
+    type_names = ["bare", "sand", "soil"]
+    flood_thresholds = np.array(
+        [world.config["base_types"][n].get("flooding_threshold", 0.0) for n in type_names],
+        dtype=np.float32,
+    )
+    captured_water = flood_thresholds[world.base_type]
+    effective_alt = world.altitude + (world.front.ground_water-captured_water) * water_to_alt
+    effective_alt -= world.config["water"].get("height_correction", 0.0)    
 
     # Target pressure (vectorized over entire grid)
     target = (

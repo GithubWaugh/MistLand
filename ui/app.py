@@ -528,7 +528,7 @@ def _draw_inspect(surface, world, mx, my, cam_x, cam_y, zoom, font, is_flooded):
                 + f.ground_water[cy, cx] * world.config["water"]["water_to_altitude"])
     lines = [
         f"Cell [{cx},{cy}]  {BASE_NAMES.get(bt, '?')}",
-        f"Alt  : {real_alt:.3f}",
+        f"Alt  : {real_alt:.3f}  ({world.altitude[cy, cx]:.3f})",
         f"GW   : {f.ground_water[cy,cx]:.3f}{'  Lake' if fld else ''}",
         f"Temp : {f.ground_temp[cy,cx]:.1f}°C / {f.atmo_temp[cy,cx]:.1f}°C atmo",
         f"Mist : {f.mist[cy,cx]:.2f}",

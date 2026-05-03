@@ -50,7 +50,7 @@
     "_comment": "Controls heat exchange rates between ground, atmosphere and neighbours. All rates in [0..1] fraction per tick.",
     "ground_to_neighbour_rate": 0.02,
     "_comment_ground_to_neighbour_rate": "Fraction of ground temperature radiated to each of the 8 neighbours per tick. Modulated by thermal_inertia.",
-    "ground_to_atmosphere_rate": 0.04,
+    "ground_to_atmosphere_rate": 0.1,
     "_comment_ground_to_atmosphere_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with atmosphere_to_ground_rate).",
     "atmosphere_to_ground_rate": 0.01,
     "_comment_atmosphere_to_ground_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with ground_to_atmosphere_rate)."
@@ -93,7 +93,9 @@
     "water_to_altitude": 0.05,
     "_comment_water_to_altitude": "Converts ground_water to an equivalent altitude for runoff calculation. effective_alt = terrain_alt + gw * water_to_altitude. Higher = flooded cells retain water more (less overflow).",
     "ground_water_diffusion_rate": 0.05,
-    "_comment_ground_water_diffusion_rate": "Fraction of ground water each non-lake cell spreads equally to its 8 neighbours per tick."
+    "_comment_ground_water_diffusion_rate": "Fraction of ground water each non-lake cell spreads equally to its 8 neighbours per tick.",
+    "height_correction": 0.01,
+    "_comment_height_correction": "Small subtraction to lower sea levels, who tends to be a little bit higher than the banks due to the water_to_altitude conversion. Adjust if you see too much or too little flooding."
   },
 
   "rain": {
