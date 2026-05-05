@@ -3,11 +3,11 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
-    "seed": 314,
+    "seed": 314159,
      "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
     "grid_width": 512,
     "grid_height": 256,
-    "total_water": 1.1,
+    "total_water": 1.5,
     "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
     "total_energy": 50000,
     "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation).",
@@ -62,7 +62,7 @@
     "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
     "k_temp": 0.05,
     "_comment_k_temp": "Weight of temperature deviation in pressure formula. Higher = temperature has more influence on wind.",
-    "k_alt": 0.05,
+    "k_alt": 0.5,
     "_comment_k_alt": "Weight of altitude in pressure formula. Higher = mountains create stronger pressure gradients.",
     "temp_ref": 15.0,
     "_comment_temp_ref": "Reference temperature (°C) at which pressure equals P_base. Cells warmer than this have lower pressure.",
@@ -78,7 +78,13 @@
     "wind_advection_strength": 0.5,
     "wind_viscosity": 0.25,
     "wind_damping": 0.98,
-    "wind_max_speed": 5.0
+    "wind_max_speed": 5.0,
+    "wind_noise_strength": 0.005,
+    "_comment_wind_noise_strength": "Amplitude of the noise perturbation added to wind each tick.",
+    "wind_noise_coarse_factor": 32,
+    "_comment_wind_noise_coarse_factor": "Downscale factor for the coarse noise grid (W/factor × H/factor). Higher = larger, smoother eddies.",
+    "wind_noise_persistence": 0.95,
+    "_comment_wind_noise_persistence": "O-U persistence per tick [0..1]. 0.99 = significant change every ~100 ticks; 0.9 = every ~10 ticks."
   },
 
   "water": {
@@ -106,7 +112,9 @@
     "rain_humidity_threshold": 3,
     "_comment_rain_humidity_threshold": "Minimum mist level [0..7] required to trigger rain. Lower = rain more easily.",
     "rain_rate": 0.1,
-    "_comment_rain_rate": "Fraction of mist converted to ground water per rainy tick."
+    "_comment_rain_rate": "Fraction of mist converted to ground water per rainy tick.",
+    "rain_saturation_threshold": 5.0,
+    "_comment_rain_saturation_threshold": "Mist level at which rain is forced, even if temperature is above threshold. Simulates heavy storms when mist is maxed out."
   },
 
   "nutriments": {
@@ -123,7 +131,7 @@
 
   "vegetation": {
     "_comment": "Controls vegetation growth, devolution, and resource consumption. growth_period and thresholds interact with fertility field.",
-    "growth_period_ticks": 60,
+    "growth_period_ticks": 200,
     "_comment_growth_period_ticks": "Minimum ticks between two growth events for a cell. Counter resets to a random value in [0, period/2] on each change (desynchronisation).",
     "water_min": 0.04,
     "_comment_water_min": "Minimum ground_water required for growth. Modulated by fertility (±fertility_water_range).",

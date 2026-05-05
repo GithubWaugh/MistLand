@@ -45,6 +45,11 @@ class World:
         self.front = WorldBuffers(self.height, self.width)
         self.back  = WorldBuffers(self.height, self.width)
 
+        # Coarse noise fields for wind perturbation (wind.py, O-U process).
+        # Initialized to None; wind.py allocates them on first tick.
+        self._wind_noise_wx: np.ndarray | None = None
+        self._wind_noise_wy: np.ndarray | None = None
+
     def swap_buffers(self) -> None:
         self.front, self.back = self.back, self.front
 
