@@ -25,9 +25,6 @@ import numpy as np
 if TYPE_CHECKING:
     from sim.world import World
 
-from sim.phases.evaporation import MIST_UNIT
-
-
 _NEIGHBOURS = [
     (-1,  0),   # north   — wy < 0
     ( 1,  0),   # south   — wy > 0
@@ -42,6 +39,7 @@ _NEIGHBOURS = [
 
 def step(world: "World") -> None:
     cfg = world.config["atmosphere"]
+    mist_to_groundwater = world.config["water"]["mist_to_groundwater"]
 
     transport_rate  = cfg["wind_transport_rate"]
     diffusion_rate  = cfg.get("mist_diffusion_rate",  0.02)
@@ -106,7 +104,7 @@ def step(world: "World") -> None:
     # --- Excess mist → ground water ---
     excess_mist      = np.maximum(new_mist - 7.0, 0.0).astype(np.float32)
     new_mist         = np.minimum(new_mist, 7.0).astype(np.float32)
-    new_ground_water = (f.ground_water + excess_mist * MIST_UNIT).astype(np.float32)
+    new_ground_water = (f.ground_water + excess_mist * mist_to_groundwater).astype(np.float32)
 
     # --- Apply ---
     b.atmo_temp    = new_atmo_temp.astype(np.float32)

@@ -6,7 +6,7 @@ mist is now float32 [0..7] — no accumulator needed.
 Evaporated water is converted directly to mist units (float).
 
 Conservation : total_water = ground_water.sum()
-                           + mist.sum() * MIST_UNIT
+                           + mist.sum() * mist_to_groundwater
 """
 
 from __future__ import annotations
@@ -16,16 +16,14 @@ import numpy as np
 if TYPE_CHECKING:
     from sim.world import World
 
-# One mist unit = this much ground_water
-MIST_UNIT = 0.1
-
-
 def step(world: "World") -> None:
     cfg = world.config["water"]
 
     temp_threshold = cfg["evap_temp_threshold"]
     water_temp_threshold = cfg["evap_water_temp_threshold"]
     evap_rate      = cfg["evap_rate"]
+    # One mist unit to ground_water conversion rate 
+    mist_to_groundwater = cfg["mist_to_groundwater"]
 
     f = world.front
     b = world.back
@@ -41,26 +39,24 @@ def step(world: "World") -> None:
         bt_cfg["soil"]["flooding_threshold"],
     ], dtype=np.float32)
     cell_flood_threshold = flood_thresholds[world.base_type]
-    is_flooded = f.ground_water >= cell_flood_threshold
-    can_evaporate &= ~is_flooded | (f.ground_temp > water_temp_threshold)
 
     # Water evaporating this tick
     evaporated = np.where(
     can_evaporate,
-    evap_rate * np.minimum(f.ground_water, 1.0),  # ← cap à 1.0
+    evap_rate * np.minimum(f.ground_water-cell_flood_threshold, 1.0),  # ← cap à 1.0
     0.0 ).astype(np.float32)
 
     # Clamp to available water
     evaporated = np.minimum(evaporated, f.ground_water)
 
     # Convert to mist units (float — no rounding)
-    mist_gain = (evaporated / MIST_UNIT).astype(np.float32)
+    mist_gain = (evaporated / mist_to_groundwater).astype(np.float32)
 
     # Clamp mist to [0, 7]
     mist_gain = np.minimum(mist_gain, 7.0 - f.mist)
 
-    # Water actually consumed = mist gained * MIST_UNIT
-    water_consumed = (mist_gain * MIST_UNIT).astype(np.float32)
+    # Water actually consumed = mist gained * mist_to_groundwater
+    water_consumed = (mist_gain * mist_to_groundwater).astype(np.float32)
 
     # Apply
     b.ground_water = (f.ground_water - water_consumed).astype(np.float32)

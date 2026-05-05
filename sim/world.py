@@ -5,7 +5,6 @@ Defines the World class.
 
 import numpy as np
 from sim.buffers import WorldBuffers
-from sim.phases.evaporation import MIST_UNIT
 
 VEG_NONE    = 0
 VEG_LICHENS = 1
@@ -28,6 +27,8 @@ class World:
         self.width  = world_cfg["grid_width"]
         self.height = world_cfg["grid_height"]
         self.tick_count = 0
+
+        self.mist_to_groundwater = self.config["water"]["mist_to_groundwater"]
 
         shape = (self.height, self.width)
 
@@ -59,25 +60,42 @@ class World:
         thresh[bt == BASE_SAND] = base_cfg["sand"]["flooding_threshold"]
         thresh[bt == BASE_SOIL] = base_cfg["soil"]["flooding_threshold"]
         return self.front.ground_water >= thresh
+    
+    def flood_threshold(self) -> np.ndarray:
+        base_cfg = self.config["base_types"]
+        bt = self.base_type
+        thresh = np.zeros(bt.shape, dtype=np.float32)
+        thresh[bt == BASE_BARE] = base_cfg["bare"].get("flooding_threshold", 0.0)
+        thresh[bt == BASE_SAND] = base_cfg["sand"].get("flooding_threshold", 0.0)
+        thresh[bt == BASE_SOIL] = base_cfg["soil"].get("flooding_threshold", 0.0)
+        return thresh
+
+    def surface_altitude(self) -> np.ndarray:
+        water_to_alt = self.config["water"].get("water_to_altitude")
+        water_overhead = np.subtract(self.front.ground_water, self.flood_threshold())
+        np.maximum(water_overhead, 0.0, out=water_overhead)  # Only count water above the flood threshold
+        return water_overhead * water_to_alt + self.altitude
 
     def tick(self) -> None:
         from sim.phases import (
             temperature, pressure, vegetation, nutriments,
-            evaporation, atmosphere, water, rain,
+            evaporation, atmosphere, water, rain, wind
         )
-        from sim.phases import wind   # N-S wind update
+        # Report in Console
+        if (self.tick_count%100==0) :
+            print(self.report())
 
         self.sync_back_from_front()
-
+        
         temperature.step(self);  self.swap_buffers(); self.sync_back_from_front()
         pressure.step(self);     self.swap_buffers(); self.sync_back_from_front()
         wind.step(self);         self.swap_buffers(); self.sync_back_from_front()
         vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
         nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
         evaporation.step(self);  self.swap_buffers(); self.sync_back_from_front()
-        atmosphere.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        rain.step(self);         self.swap_buffers(); self.sync_back_from_front()  # Rain must be before water to update mist and ground water correctly
         water.step(self);        self.swap_buffers(); self.sync_back_from_front()
-        rain.step(self);         self.swap_buffers()
+        atmosphere.step(self);   self.swap_buffers(); self.sync_back_from_front()
 
         self.tick_count += 1
 
@@ -94,10 +112,11 @@ class World:
                 print(f"Tick {self.tick_count} : NaN in {name} !")
                 break
 
+    # REPORTS METHODS
     def total_water(self) -> float:
         return (
             float(self.front.ground_water.sum())
-            + float(self.front.mist.sum()) * MIST_UNIT
+            + float(self.front.mist.sum()) * self.mist_to_groundwater
             + float(self.front.vegetation_water.sum())
         )
 

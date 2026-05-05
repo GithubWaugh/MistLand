@@ -38,7 +38,6 @@ import numpy as np
 if TYPE_CHECKING:
     from sim.world import World
 
-from sim.phases.evaporation import MIST_UNIT
 from sim.world import VEG_NONE, VEG_LICHENS, VEG_GRASS, VEG_SHRUBS, VEG_TREES
 from sim.world import BASE_BARE, BASE_SAND, BASE_SOIL
 
@@ -59,6 +58,7 @@ def step(world: "World") -> None:
     cfg      = world.config["vegetation"]
     base_cfg = world.config["base_types"]
     alb_cfg  = world.config["albedo"]
+    mist_to_groundwater = world.config["water"]["mist_to_groundwater"]
 
     growth_period   = cfg["growth_period_ticks"]
     water_min       = cfg["water_min"]
@@ -249,13 +249,13 @@ def step(world: "World") -> None:
     # Eau consommée depuis le mist (lichen depuis humidité)
     mist_consumed = np.where(
         using_mist,
-        cost_water_growth / MIST_UNIT,  # convertir en unités mist
+        cost_water_growth / mist_to_groundwater,  # convertir en unités mist
         0.0
     ).astype(np.float32)
     mist_consumed = np.minimum(mist_consumed, f.mist)
     # mist est lu depuis front — on écrit dans back
     b.mist = np.clip(f.mist - mist_consumed, 0.0, 7.0).astype(np.float32)
-    veg_w += (mist_consumed * MIST_UNIT).astype(np.float32)
+    veg_w += (mist_consumed * mist_to_groundwater).astype(np.float32)
 
     nut = np.where(grows, nut - cost_nut_growth, nut).astype(np.int16)
 

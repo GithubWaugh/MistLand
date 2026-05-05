@@ -1,32 +1,6 @@
 # INTERFACE #
 ## ENREGISTREMENT ##
 Possibilité de sauvegarder plusieurs "parties" dans le même répertoire (ficher json et fichier npz avec un prefixe identique par exemple)
-## AMELIORER LE FONCTIONNEMENT DES OVERLAYS ##
-Touche "o" ou menu ouvre une fenêtre présentant la liste des overlays, en trois catégories :
-- Base pour le fond de carte : 
-    - couche en niveau de gris représentant la pente et l'orientation de chaque cellule : les cellules orientées nord-ouest sont éclairées, celle orientées Sud-Est dans une ombre relative, tout cela modulé par la pente (plus la pente est forte, plus le ton est foncé) (physiquement faux évidemment, mais similaire à la logique utilisée dans les cartes de randonnée): nécessite de calculer les gradients de pente
-    - plage de luminosité .25 à .75 (éviter les tons extrêmes)
-- Layer 1, au choix et de manière exclusive (Remplacement des composantes Hue et Saturation de la couche inférieure) :
-    - types de sol (rock, sand, soil, water). 
-    - température (dégradé existant)
-    - pression
-    - humidité aérienne
-    - humidité au sol
-- layer 2 : végétation et autres éléments au sol, au choix et de manière exclusive :
-    - peut être neutre (désactivé)
-    - végétation indiquée en surimpression :
-        - lichen : quelques points vert-jaune pâle, opacité 0.5
-        - grass : points verts, plus nombreux, opacité O.5
-        - shrubs : points denses, verts, opacité variable de 0.5 à 1
-        - trees : points, regroupés par deux, opaques, vert plus foncé
-    - nutriments : points ocres, avec une densité dépendant de la quantité de nutriments présents
-    - sédiments (pas encore implémentés, similaire aux nutriments) : points gris, densité selon quantité
-- layer 3 : éléments atmosphériques : 
-    - Peut être neutre (désactivé)
-    - streamers du vent
-        - sur le système déjà en place, ajouter une pointe de flèche minimaliste pour indiquer le sens du vent
-    - pluie
-
 
 # SIMULATION #
 ## SEDIMENTS ##

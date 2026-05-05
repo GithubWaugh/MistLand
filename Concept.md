@@ -23,33 +23,43 @@ Each phase is followed by a buffer swap + sync, so every phase reads a fully up-
 
 | # | Phase | Description |
 |---|-------|-------------|
-| 1 | **Temperature** | Ground ↔ atmosphere net flux ; ground ↔ neighbours radiation |
-| 2 | **Pressure** | Derived from atmospheric temperature and altitude |
-| 3 | **Vegetation** | Growth / devolution, water and nutriments consumption |
-| 4 | **Nutriments** | Diffusion to neighbours |
-| 5 | **Evaporation** | Ground water → atmosphere (mist) |
-| 6 | **Atmospheric movements** | Wind transports mist and temperature |
-| 7 | **Water movements** | Runoff based on hydraulic altitude |
-| 8 | **Rain** | Mist → ground water, based on temperature and humidity |
+| 1 | **Rain** | Mist → ground water, based on temperature and humidity ; excess mist precipitates immediately |
+| 2 | **Temperature** | Ground ↔ atmosphere net flux ; ground ↔ neighbours radiation |
+| 3 | **Pressure** | Derived from atmospheric temperature and surface altitude |
+| 4 | **Wind** | Persistent wind field updated via simplified Navier-Stokes |
+| 5 | **Vegetation** | Growth / devolution, water and nutriments consumption |
+| 6 | **Nutriments** | Diffusion to neighbours |
+| 7 | **Evaporation** | Ground water → atmosphere (mist) |
+| 8 | **Atmospheric movements** | Wind transports mist and temperature |
+| 9 | **Water movements** | Runoff based on hydraulic altitude |
+
+Rain runs first so mist and ground water are updated before water movements propagate them.
 
 ---
 
 ## Game appearance
 
-Windowed or full-screen. Current implementation : single pygame window with overlays and inspect panel.
+Windowed. Implementation : Tkinter main window embedding a Pygame canvas, with a menu bar and modal dialogs.
 
-- **Top-down view of the map**
+- **Top-down view of the map** (Pygame canvas)
   - Base color for the ground layer (bare/sand/soil) ; lake cells shown in blue
+  - Hillshading from altitude gradient, composited via HSL (hue/saturation from data, luminosity from shading)
   - Overlayed icons for the vegetation (with transparency) ; submerged lichen shown as algae (~)
   - Mist overlay : white veil, opacity proportional to airborne water (toggle 6)
-  - Exclusive data overlays (toggle 1–3, 5) :
+  - Wind streamers : directional arrows scaled to wind speed (toggle 3)
+  - Rain particle effect (toggle 4)
+  - Exclusive data overlays (toggle 1–2, 5) :
     - Water : ground water level
     - Temperature : ground temperature gradient
-    - Pressure : atmospheric pressure
     - Altitude : spectral color map (violet=low → red=high)
   - Inspect panel (toggle I) : cell info following the mouse cursor
 
-- **Text frame** — command-line type interaction *(planned)*
+- **Menu bar** (Tkinter)
+  - File : Save / Load / Quit
+  - New Sim : grid size, total water, random seed
+  - Adjust Params : tweak live simulation parameters
+  - Help : keyboard shortcuts reference
+
 - **3D view of the torus** — ModernGL, instanced vegetation models *(planned)*
 
 ---
@@ -121,9 +131,11 @@ Each cell is defined by a set of static properties and layered data.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `pressure` | `float32` (bar) | Drives wind — see Atmosphere section |
+| `pressure` | `float32` (bar) | Derived each tick from temperature and surface altitude |
 | `mist` | `float32 [0..7]` | Airborne water quantity (continuous float, no integer rounding) |
 | `atmo_temp` | `float32` (°C) | Atmospheric temperature |
+| `wind_x` | `float32` | East-ward wind component (persistent) |
+| `wind_y` | `float32` | South-ward wind component (persistent) |
 
 ---
 
@@ -178,9 +190,9 @@ Fixed world total quantity (conserved). Total = `ground_water.sum() + mist.sum()
 - **Evaporation** : if ground temperature > `evap_temp_threshold` and ground water > 0, a fraction transfers to mist (float, no rounding loss)
 - **Runoff** : driven by **hydraulic altitude** rather than terrain altitude alone :
   ```
-  effective_alt = altitude + ground_water × water_to_altitude
+  surface_altitude = altitude + max(ground_water − flooding_threshold, 0) × water_to_altitude
   ```
-  Water only flows toward cells where the water *surface* is lower — prevents overflow into already-flooded cells.
+  Only water *above* the flooding threshold is counted, so shallow water doesn't inflate the surface unduly. Water only flows toward cells where the water *surface* is lower — prevents overflow into already-flooded cells.
   Sand and soil retain a minimum amount (`retention_min`).
 - **Flooding** : if `ground_water` ≥ `flooding_threshold` (varies by base type), the cell is a *Lake* :
   - Displayed in blue on the map
@@ -232,29 +244,34 @@ Additional rules :
 
 #### Pressure
 
-Computed each tick :
+Computed each tick from the atmospheric temperature and the **surface altitude** (terrain + water column above flood threshold) :
 ```
 pressure(cell) = P_base
                − k_temp × (atmo_temp(cell) − temp_ref)
-               + k_alt  × altitude(cell)
+               − k_alt  × surface_altitude(cell)
 ```
 - `temp_ref` : reference temperature at which pressure = P_base
 - Hot air (above temp_ref) → low pressure ; cold air → high pressure
 - High altitude → low pressure
-
-A `pressure_damping` coefficient smooths convergence and prevents numerical oscillation.
+- New pressure converges toward the target via `pressure_damping` to prevent oscillation
 
 **Latitudinal gradient** : initial temperatures follow `cos(π·v)`, creating a persistent warm/cold banding that drives baseline wind circulation. This gradient is maintained by the temperature phase each tick.
 
 #### Wind
 
-Derived from pressure gradient — not stored, computed each tick :
-```
-wind(A → B) = k_wind × (pressure(A) − pressure(B))
-```
+The wind field (`wind_x`, `wind_y`) is a **persistent vector field** updated each tick via a simplified 2D Navier-Stokes model. Three forces act simultaneously :
+
+| Force | Formula | Effect |
+|-------|---------|--------|
+| Pressure gradient | `−k_wind × ∇P` | Wind flows from high to low pressure |
+| Advection | `−advection_strength × (wind·∇)wind` | Wind carries itself → vortices and persistence |
+| Viscosity | `+viscosity × ∇²wind` | Smooths instabilities |
+
+A multiplicative damping factor and a speed clamp (`wind_max_speed`) ensure numerical stability.
+
 Wind transports mist and atmospheric temperature to neighbours via antisymmetric net flux (exact conservation).
 
-*(Vortices, Coriolis effect — deferred)*
+*(Coriolis effect — deferred)*
 
 #### Rain
 
@@ -286,5 +303,5 @@ All tunable parameters are stored in `config/default.json`. Keys prefixed `_comm
 - **Large-scale atmospheric dynamics** : vortices, Coriolis effect
 - **Geological events** : volcanoes, particle emissions
 - **3D torus view** : ModernGL, instanced vegetation models
-- **Save / load** : npz archive + metadata JSON
+- **Save / load** : npz archive + metadata JSON *(io.py written, UI wired)*
 - **Entities** : animals, feeding, movement

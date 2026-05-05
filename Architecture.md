@@ -14,28 +14,29 @@ MistLand/
 ├── config/
 │   └── default.json          # All tunable parameters with _comment annotations
 │
-├── data/
-│   └── saves/                # World state dumps (manual save/load — not yet implemented)
-│
 ├── sim/                      # Backend — simulation logic
 │   ├── __init__.py
 │   ├── world.py              # World class : holds all numpy arrays, exposes tick()
+│   ├── buffers.py            # WorldBuffers dataclass (all dynamic arrays + copy_from)
 │   ├── generation.py         # World generation : value noise, fertility, initial state
-│   ├── phases/               # One module per simulation phase
-│   │   ├── __init__.py
-│   │   ├── temperature.py
-│   │   ├── pressure.py
-│   │   ├── vegetation.py
-│   │   ├── nutriments.py
-│   │   ├── evaporation.py
-│   │   ├── atmosphere.py
-│   │   ├── water.py
-│   │   └── rain.py
-│   └── io.py                 # Save / load world state (planned)
+│   ├── io.py                 # Save / load world state (npz + JSON)
+│   └── phases/               # One module per simulation phase
+│       ├── __init__.py
+│       ├── rain.py           # Phase 1 : mist → ground water
+│       ├── temperature.py    # Phase 2 : ground ↔ atmosphere heat exchange
+│       ├── pressure.py       # Phase 3 : pressure from temperature and surface altitude
+│       ├── wind.py           # Phase 4 : Navier-Stokes wind vector field
+│       ├── vegetation.py     # Phase 5 : growth / devolution, fertility modulation
+│       ├── nutriments.py     # Phase 6 : nutrient diffusion to neighbours
+│       ├── evaporation.py    # Phase 7 : ground water → mist
+│       ├── atmosphere.py     # Phase 8 : wind transport of mist and temperature
+│       └── water.py          # Phase 9 : runoff and flooding
 │
 ├── ui/                       # Frontend — rendering and input
 │   ├── __init__.py
-│   └── app.py                # Main pygame loop, overlays, inspect panel
+│   ├── app.py                # Renderer class : pygame canvas, multi-layer rendering
+│   ├── main_window.py        # Tkinter main window embedding pygame, event loop, menu
+│   └── dialogs.py            # Modal dialogs : save / load / new sim / adjust params / help
 │
 ├── main.py                   # Entry point
 ├── requirements.txt
@@ -77,6 +78,8 @@ All arrays live in a single `World` object.
 | `pressure` | `float32` | bar | Atmospheric pressure (drives wind) |
 | `mist` | `float32` | [0..7] | Airborne water — continuous float (no integer rounding artefacts) |
 | `atmo_temp` | `float32` | °C | Atmospheric temperature |
+| `wind_x` | `float32` | — | East-ward wind component (persistent across ticks) |
+| `wind_y` | `float32` | — | South-ward wind component (positive = screen-down) |
 
 #### Vegetation layer *(updated each tick)*
 
@@ -111,14 +114,15 @@ This pattern ensures every phase sees a fully consistent, up-to-date world state
 def tick(self) -> None:
     self.sync_back_from_front()
 
+    rain.step(self);         self.swap_buffers(); self.sync_back_from_front()  # mist → ground water first
     temperature.step(self);  self.swap_buffers(); self.sync_back_from_front()
     pressure.step(self);     self.swap_buffers(); self.sync_back_from_front()
+    wind.step(self);         self.swap_buffers(); self.sync_back_from_front()
     vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
     nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
     evaporation.step(self);  self.swap_buffers(); self.sync_back_from_front()
     atmosphere.step(self);   self.swap_buffers(); self.sync_back_from_front()
     water.step(self);        self.swap_buffers(); self.sync_back_from_front()
-    rain.step(self);         self.swap_buffers()
 
     self.tick_count += 1
 ```
@@ -151,11 +155,21 @@ The `mist_accumulator` field (previously used to buffer fractional evaporation) 
 
 ### Hydraulic altitude for runoff
 
-Runoff in `water.py` uses hydraulic altitude rather than terrain altitude :
+Runoff in `water.py` uses hydraulic altitude rather than terrain altitude. Only water *above* the flooding threshold is counted, so shallow water doesn't inflate the surface height unduly :
 ```
-effective_alt = altitude + ground_water × water_to_altitude
+surface_altitude = altitude + max(ground_water − flooding_threshold, 0) × water_to_altitude
 ```
-This prevents water from flowing into already-flooded cells that happen to be at lower terrain altitude.
+This prevents water from flowing into already-flooded cells that happen to be at lower terrain altitude. The same `surface_altitude()` helper is also used by the pressure phase.
+
+### Wind — persistent Navier-Stokes field
+
+`wind_x` and `wind_y` are persistent arrays updated each tick by `wind.py`. Three forces act :
+
+1. **Pressure gradient** : `wind -= k_wind × ∇P` (central differences, toric wrap)
+2. **Advection** : `wind -= advection_strength × (wind·∇)wind` (creates vortices)
+3. **Viscosity** : `wind += viscosity × ∇²wind` (4-neighbour Laplacian, smooths instabilities)
+
+After the update, a multiplicative `wind_damping` factor and a `wind_max_speed` clamp prevent unlimited acceleration and numerical divergence.
 
 ### Seamlessly-tiling noise
 
@@ -197,21 +211,40 @@ while tick_accum >= interval:
 
 ---
 
-## UI — app.py
+## UI
 
-Single file, all rendering in pygame. Key features :
+The frontend is split across three files :
+
+- **`main_window.py`** — Tkinter main window. Embeds the Pygame surface via `SDL_WINDOWID`. Drives the event loop with `root.after(16, ...)`. Owns the menu bar (File, New Sim, Adjust Params, Help) and accumulator-based tick timing.
+- **`app.py`** — `Renderer` class. All Pygame drawing : hillshading, base layer, vegetation icons, mist veil, wind streamers, rain particles, inspect panel, HSL compositing.
+- **`dialogs.py`** — Modal Tkinter dialogs for save, load, new sim, parameter adjustment, and help.
+
+### Rendering layer stack (bottom → top)
+
+1. Hillshading from altitude gradient (always visible)
+2. Exclusive data layer (L1) : water level, temperature, altitude spectral map, or plain soil colors
+3. Ground elements layer (L2) : vegetation icons or nutriment dots
+4. Mist overlay : white veil, per-pixel alpha
+5. Wind streamers : directional arrows
+6. Rain particle effect
+7. Inspect panel : cell info following mouse cursor
+
+HSL compositing : hue + saturation come from the data layer ; luminosity comes from hillshading.
+
+### Controls
 
 | Feature | Key | Notes |
 |---------|-----|-------|
 | Step one tick | Space | Only when paused |
 | Pause / resume | A | |
 | Speed control | PgUp / PgDn | 8 steps : 0.25 to 50 t/s |
-| Water overlay | 1 | Semi-transparent, exclusive |
-| Temperature overlay | 2 | Semi-transparent, exclusive |
-| Pressure overlay | 3 | Semi-transparent, exclusive |
-| Vegetation icons | 4 | Toggle ; hidden below zoom 4x |
-| Altitude overlay | 5 | Spectral (violet→red), opaque, exclusive |
+| Water overlay | 1 | Exclusive with other L1 overlays |
+| Temperature overlay | 2 | Exclusive with other L1 overlays |
+| Wind streamers | 3 | Toggle |
+| Rain effect | 4 | Toggle |
+| Altitude overlay | 5 | Spectral (violet→red), exclusive |
 | Mist overlay | 6 | White veil, per-pixel alpha |
+| Vegetation icons | V | Toggle ; density zoom-adaptive |
 | Inspect panel | I | Cell info following mouse cursor |
 | Zoom | Mouse wheel | 1x – 32x, centred on cursor |
 | Pan | RMB / MMB drag | Clamped to world bounds |
@@ -221,9 +254,9 @@ Submerged lichen is displayed as a teal ~ (algae icon).
 
 ---
 
-## Save / load *(planned)*
+## Save / load
 
-World state will be saved as `.npz` archive + metadata JSON :
+World state is saved as `.npz` archive + metadata JSON, implemented in `sim/io.py` and wired to the File menu in `ui/main_window.py` and `ui/dialogs.py` :
 
 ```
 saves/
@@ -246,12 +279,12 @@ saves/
 |---|-----------|--------|
 | 1 | **Data structures** | ✅ World class, WorldBuffers, config loading |
 | 2 | **World generation** | ✅ Value noise, fertility, temperature gradient |
-| 3 | **Tick loop + all 8 phases** | ✅ Validated (water + energy conservation) |
-| 4 | **2D map view** | ✅ Pygame window, zoom, pan, lake colors |
-| 5 | **Overlays + inspect** | ✅ Water, temp, pressure, altitude (spectral), mist, inspect panel |
-| 6 | **UI controls** | ✅ Step/auto/speed, all toggle keys |
-| 7 | **3D torus view** | ⏳ ModernGL, instanced vegetation models |
-| 8 | **Save / load** | ⏳ npz archive + metadata JSON |
+| 3 | **Tick loop + all 9 phases** | ✅ Validated (water + energy conservation) |
+| 4 | **2D map view** | ✅ Tkinter + pygame, zoom, pan, hillshading, lake colors |
+| 5 | **Overlays + inspect** | ✅ Water, temp, altitude (spectral), mist, wind streamers, inspect panel |
+| 6 | **UI controls** | ✅ Step/auto/speed, all toggle keys, menu bar, dialogs |
+| 7 | **Save / load** | ✅ npz archive + metadata JSON (io.py + dialogs wired) |
+| 8 | **3D torus view** | ⏳ ModernGL, instanced vegetation models |
 | 9 | **Entities** | ⏳ Animals, feeding, movement |
 
 ---
@@ -260,11 +293,12 @@ saves/
 
 ```
 numpy          # world state arrays and all vectorized operations
-pygame         # 2D rendering, event loop, UI
+pygame         # 2D rendering, event loop
 scipy          # gaussian_filter for noise smoothing
-moderngl       # 3D torus view (milestone 7)
+moderngl       # 3D torus view (milestone 8, not yet used)
+opensimplex    # simplex noise (available, alternative to value noise)
 ```
 
 ```
-pip install numpy pygame scipy moderngl
+pip install -r requirements.txt
 ```

@@ -524,8 +524,8 @@ def _draw_inspect(surface, world, mx, my, cam_x, cam_y, zoom, font, is_flooded):
     wxv = float(f.wind_x[cy, cx])
     wyv = float(f.wind_y[cy, cx])
     spd = math.sqrt(wxv ** 2 + wyv ** 2)
-    real_alt = (world.altitude[cy, cx]
-                + f.ground_water[cy, cx] * world.config["water"]["water_to_altitude"])
+    #real_alt = (world.altitude[cy, cx] + f.ground_water[cy, cx] * world.config["water"]["water_to_altitude"])
+    real_alt = world.surface_altitude()[cy, cx]
     lines = [
         f"Cell [{cx},{cy}]  {BASE_NAMES.get(bt, '?')}",
         f"Alt  : {real_alt:.3f}  ({world.altitude[cy, cx]:.3f})",
@@ -576,7 +576,7 @@ def _crop_and_scale(rgb, cam_x, cam_y, zoom, vw, vh, ww, wh):
 class Renderer:
     def __init__(self, world: World):
         self.state        = RendererState()
-        self._hillshade_L = _build_hillshade(world.altitude)   # statique — calculé une fois
+        self._hillshade_L = _build_hillshade(world.surface_altitude()) 
         self._font        = None
         self._ifont       = None
 
@@ -598,6 +598,7 @@ class Renderer:
         vw, vh = sw, sh - INFO_BAR_H
         ww, wh = world.width, world.height
         is_flooded = _compute_flooded(world)
+        self._hillshade_L = _build_hillshade(world.surface_altitude()) 
 
         # --- Couche de base : hillshade + compositing L1 optionnel ---
         if s.layer1_mode == L1_NONE:

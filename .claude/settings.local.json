@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\yannp\\\\Documents\\\\GitHub\\\\MistLand\" -Recurse -Exclude \".venv\" | Where-Object {$_.PSIsContainer -eq $false} | Select-Object FullName)"
+    ]
+  }
+}

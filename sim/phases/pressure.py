@@ -23,7 +23,6 @@ import numpy as np
 if TYPE_CHECKING:
     from sim.world import World
 
-
 def step(world: "World") -> None:
     cfg = world.config["atmosphere"]
 
@@ -33,21 +32,13 @@ def step(world: "World") -> None:
     temp_ref = cfg["temp_ref"]
     damping  = cfg["pressure_damping"]
 
-    water_to_alt = world.config["water"].get("water_to_altitude", 0.1)
-    type_names = ["bare", "sand", "soil"]
-    flood_thresholds = np.array(
-        [world.config["base_types"][n].get("flooding_threshold", 0.0) for n in type_names],
-        dtype=np.float32,
-    )
-    captured_water = flood_thresholds[world.base_type]
-    effective_alt = world.altitude + (world.front.ground_water-captured_water) * water_to_alt
-    effective_alt -= world.config["water"].get("height_correction", 0.0)    
+    surface_altitude = world.surface_altitude()  
 
     # Target pressure (vectorized over entire grid)
     target = (
         P_base
         - k_temp * (world.front.atmo_temp - temp_ref)
-        - k_alt  * effective_alt # world.altitude # effective_alt // could be used for more realism, but generate no wind
+        - k_alt  * surface_altitude
     ).astype(np.float32)
 
     # Smooth transition toward target

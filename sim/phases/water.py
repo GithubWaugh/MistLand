@@ -64,15 +64,14 @@ def step(world: "World") -> None:
     flood_thresh[bt == 2] = base_cfg["soil"]["flooding_threshold"]
 
     # --- Hydraulic altitude : terrain + water column ---
-    # Water only flows from cells where the water SURFACE is higher,
+    # Water flows from cells where the water SURFACE is higher,
     # not just where the terrain is higher.
-    effective_alt = (alt + f.ground_water * water_to_alt).astype(np.float32)
 
     # --- Hydraulic altitude deltas to each neighbour ---
     deltas = []
     for dr, dc in _NEIGHBOURS:
-        shifted = np.roll(np.roll(effective_alt, dr, axis=0), dc, axis=1)
-        d = effective_alt - shifted
+        shifted = np.roll(np.roll(world.surface_altitude(), dr, axis=0), dc, axis=1)
+        d = world.surface_altitude() - shifted
         deltas.append(np.maximum(d, 0.0).astype(np.float32))
 
     total_delta = np.add.reduce(deltas).astype(np.float32)
@@ -80,10 +79,12 @@ def step(world: "World") -> None:
     # --- Water available for runoff (above retention minimum) ---
     available = np.maximum(f.ground_water - retention, 0.0).astype(np.float32)
 
-    # Total outflow : only where downhill neighbours exist
+    # Total outflow : only where downhill neighbours exist.
+    # Cap to half the surface gap (in water units) so we never overshoot equilibrium.
+    max_equalize = (total_delta / water_to_alt * 0.5).astype(np.float32)
     outflow = np.where(
         total_delta > 0.0,
-        runoff_rate * available,
+        np.minimum(runoff_rate * available, max_equalize),
         0.0
     ).astype(np.float32)
 
@@ -103,18 +104,19 @@ def step(world: "World") -> None:
 
         water_to_neighbour = (outflow * fraction).astype(np.float32)
         new_ground_water  += np.roll(np.roll(water_to_neighbour, -dr, axis=0), -dc, axis=1)
-
+    
+    # Clamp : no negative water quantity
     new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
 
     # --- Flooding : cells above threshold are lakes ---
-    is_lake = new_ground_water >= flood_thresh
+    is_lake = world.get_flooded_mask()
 
     # Lakes generate nutriments for neighbours
     lake_rate      = int(nut_cfg["lake_generation_rate"])
     new_nutriments = f.nutriments.copy()
 
-    for axis, shift in _NEIGHBOURS:
-        neighbour_is_lake = np.roll(is_lake, -shift, axis=axis)
+    for dr, dc in _NEIGHBOURS:
+        neighbour_is_lake = np.roll(np.roll(is_lake, dr, axis=0), dc, axis=1)
         new_nutriments = np.clip(
             new_nutriments.astype(np.int16) + np.where(neighbour_is_lake, lake_rate, 0),
             0, 255
@@ -138,6 +140,7 @@ def step(world: "World") -> None:
             0, 255
         ).astype(np.uint8)
 
+    """
     # --- Ground water diffusion for non-lake cells ---
     # Non-lake cells spread 5% of their ground water equally to 8 neighbours.
     gw_diffusion_rate = cfg.get("ground_water_diffusion_rate", 0.05)
@@ -156,7 +159,7 @@ def step(world: "World") -> None:
     error        = water_before - water_after
     if abs(error) > 1e-6:
         new_ground_water += error / (world.height * world.width)
-
+    """
     # --- Apply to back buffer ---
     b.ground_water = new_ground_water
     b.nutriments   = new_nutriments
