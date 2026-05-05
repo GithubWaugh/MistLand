@@ -62,7 +62,7 @@
     "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
     "k_temp": 0.05,
     "_comment_k_temp": "Weight of temperature deviation in pressure formula. Higher = temperature has more influence on wind.",
-    "k_alt": 0.0025,
+    "k_alt": 0.05,
     "_comment_k_alt": "Weight of altitude in pressure formula. Higher = mountains create stronger pressure gradients.",
     "temp_ref": 15.0,
     "_comment_temp_ref": "Reference temperature (°C) at which pressure equals P_base. Cells warmer than this have lower pressure.",
@@ -73,11 +73,12 @@
     "wind_transport_rate": 0.075,
     "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick.",
     "mist_diffusion_rate": 0.01,
-    "mist_advection_rate": 0.75,
+    "mist_advection_rate": 0.5,
+    "mist_pressure_factor": 0.05,
     "wind_advection_strength": 0.5,
     "wind_viscosity": 0.25,
     "wind_damping": 0.98,
-    "wind_max_speed": 3.0
+    "wind_max_speed": 5.0
   },
 
   "water": {
@@ -100,7 +101,7 @@
 
   "rain": {
     "_comment": "Controls precipitation. Rain occurs when atmo_temp < threshold AND mist >= humidity_threshold.",
-    "rain_temp_threshold": 30.0,
+    "rain_temp_threshold": 20.0,
     "_comment_rain_temp_threshold": "Atmospheric temperature (°C) below which rain can occur. Raise to make rain more frequent.",
     "rain_humidity_threshold": 3,
     "_comment_rain_humidity_threshold": "Minimum mist level [0..7] required to trigger rain. Lower = rain more easily.",

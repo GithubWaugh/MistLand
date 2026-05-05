@@ -39,6 +39,7 @@ def step(world: "World") -> None:
         P_base
         - k_temp * (world.front.atmo_temp - temp_ref)
         - k_alt  * surface_altitude
+        + world.front.mist * cfg.get("mist_pressure_factor", 0.0)  # Optional mist contribution to pressure
     ).astype(np.float32)
 
     # Smooth transition toward target
