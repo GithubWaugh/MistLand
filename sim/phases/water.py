@@ -111,6 +111,11 @@ def step(world: "World") -> None:
     # --- Flooding : cells above threshold are lakes ---
     is_lake = world.get_flooded_mask()
 
+    # Flooded snow melts into water, adding to the lake's ground water
+    snow_melt = np.where(is_lake, f.ground_snow, 0.0).astype(np.float32)
+    new_ground_water += snow_melt
+    b.ground_snow -= snow_melt
+
     # Lakes generate nutriments for neighbours
     lake_rate      = int(nut_cfg["lake_generation_rate"])
     new_nutriments = f.nutriments.copy()

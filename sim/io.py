@@ -34,6 +34,7 @@ def save(world, save_dir: str) -> None:
         nutriments       = world.front.nutriments,
         ground_temp      = world.front.ground_temp,
         albedo           = world.front.albedo,
+        ground_snow      = world.front.ground_snow,
         vegetation_water = world.front.vegetation_water,
         pressure         = world.front.pressure,
         mist             = world.front.mist,
@@ -68,6 +69,7 @@ def load(save_dir: str):
     world.front.vegetation_water = data["vegetation_water"]
     world.front.pressure         = data["pressure"]
     world.front.mist             = data["mist"]
+    world.front.ground_snow     = data["ground_snow"]
     world.front.atmo_temp        = data["atmo_temp"]
     world.front.wind_x           = data["wind_x"]
     world.front.wind_y           = data["wind_y"]

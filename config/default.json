@@ -60,7 +60,7 @@
     "_comment": "Controls pressure computation and wind-driven transport.",
     "P_base": 1.0,
     "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
-    "k_temp": 0.05,
+    "k_temp": 0.01,
     "_comment_k_temp": "Weight of temperature deviation in pressure formula. Higher = temperature has more influence on wind.",
     "k_alt": 0.5,
     "_comment_k_alt": "Weight of altitude in pressure formula. Higher = mountains create stronger pressure gradients.",
@@ -73,7 +73,7 @@
     "wind_transport_rate": 0.075,
     "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick.",
     "mist_diffusion_rate": 0.01,
-    "mist_advection_rate": 0.5,
+    "mist_advection_rate": 0.25,
     "mist_pressure_factor": 0.05,
     "wind_advection_strength": 0.5,
     "wind_viscosity": 0.25,
@@ -115,6 +115,18 @@
     "_comment_rain_rate": "Fraction of mist converted to ground water per rainy tick.",
     "rain_saturation_threshold": 5.0,
     "_comment_rain_saturation_threshold": "Mist level at which rain is forced, even if temperature is above threshold. Simulates heavy storms when mist is maxed out."
+  },
+
+  "snow": {
+    "_comment": "Controls snow dynamics. Snow accumulates when atmo_temp < threshold, and melts when atmo_temp > melt_threshold.",
+    "snow_temp_threshold": 0.0,
+    "_comment_snow_temp_threshold": "Atmospheric temperature (°C) below which snow can accumulate. Lower = less snow overall.",
+    "mist_to_snow_rate": 0.05,
+    "_comment_mist_to_snow_rate": "Fraction of mist converted to snow per tick when temperature is below threshold.",
+    "snow_melting_threshold": 2.0,
+    "_comment_snow_to_water_threshold": "Atmospheric temperature (°C) above which snow starts melting. Higher = snow lasts longer.",
+    "snow_melting_rate": 0.025,
+    "_comment_snow_melting_rate": "Fraction of ground snow converted to ground water per tick when above melt threshold."
   },
 
   "nutriments": {

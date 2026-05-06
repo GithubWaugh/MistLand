@@ -36,6 +36,7 @@ COLOR_SAND      = (189, 167, 117)
 COLOR_SOIL      = (120,  85,  50)
 COLOR_LAKE      = ( 40, 100, 200)
 COLOR_RAIN      = (180, 210, 255)
+COLOR_SNOW      = (255, 255, 255)
 
 # L2 — points végétation
 COLOR_L2_LICHEN = (180, 200, 100)   # jaune-vert pâle
@@ -66,8 +67,8 @@ L1_SOIL         = 1
 L1_TEMP         = 2
 L1_PRESSURE     = 3
 L1_GROUND_WATER = 4
-L1_BLANK        = 5
-L1_MODES = [L1_NONE, L1_SOIL, L1_TEMP, L1_PRESSURE, L1_GROUND_WATER, L1_BLANK]
+L1_BLANK        = 6
+L1_MODES = [L1_NONE, L1_SOIL, L1_TEMP, L1_PRESSURE, L1_GROUND_WATER,L1_BLANK]
 L1_NAMES = {
     L1_NONE        : "---",
     L1_SOIL        : "soil",
@@ -124,7 +125,7 @@ class RendererState:
 # Hillshading
 # ---------------------------------------------------------------------------
 
-def _build_hillshade(altitude: np.ndarray) -> np.ndarray:
+def _build_hillshade(altitude, snow: np.ndarray) -> np.ndarray:
     dzdx = (np.roll(altitude, -1, axis=1) - np.roll(altitude,  1, axis=1)) * 0.5
     dzdy = (np.roll(altitude, -1, axis=0) - np.roll(altitude,  1, axis=0)) * 0.5
 
@@ -146,7 +147,10 @@ def _build_hillshade(altitude: np.ndarray) -> np.ndarray:
     # Plage de luminosité cible
     LUM_MIN = 0.5
     LUM_MAX = 0.75
-    shade = shade * (LUM_MAX - LUM_MIN) + LUM_MIN
+    shade = shade * (LUM_MAX - LUM_MIN) + LUM_MIN 
+    
+    # Modulation par la neige : éclaircit les zones enneigées
+    shade = np.where(snow >= 0.01, shade + 0.25, shade)
 
     return shade.astype(np.float32)
 
@@ -249,6 +253,7 @@ def _l1_soil_rgb(world) -> np.ndarray:
     ft[bt == BASE_SAND] = base_cfg["sand"]["flooding_threshold"]
     ft[bt == BASE_SOIL] = base_cfg["soil"]["flooding_threshold"]
     rgb[world.front.ground_water >= ft] = COLOR_LAKE
+    rgb[world.front.ground_snow >= 0.01] = COLOR_SNOW
     return rgb
 
 def _l1_temp_rgb(world) -> np.ndarray:
@@ -532,6 +537,7 @@ def _draw_inspect(surface, world, mx, my, cam_x, cam_y, zoom, font, is_flooded):
         f"GW   : {f.ground_water[cy,cx]:.3f}{'  Lake' if fld else ''}",
         f"Temp : {f.ground_temp[cy,cx]:.1f}°C / {f.atmo_temp[cy,cx]:.1f}°C atmo",
         f"Mist : {f.mist[cy,cx]:.2f}",
+        f"Snow : {f.ground_snow[cy,cx] if f.ground_snow[cy,cx]>0 else 'No'}",
         f"Press: {f.pressure[cy,cx]:.4f} bar",
         f"Wind : ({wxv:+.4f}, {wyv:+.4f})  spd={spd:.4f}",
         f"Veg  : {VEG_NAMES.get(int(f.vegetation[cy,cx]), '?')}",
@@ -576,7 +582,7 @@ def _crop_and_scale(rgb, cam_x, cam_y, zoom, vw, vh, ww, wh):
 class Renderer:
     def __init__(self, world: World):
         self.state        = RendererState()
-        self._hillshade_L = _build_hillshade(world.surface_altitude()) 
+        self._hillshade_L = _build_hillshade(world.surface_altitude(), world.front.ground_snow) 
         self._font        = None
         self._ifont       = None
 
@@ -598,7 +604,7 @@ class Renderer:
         vw, vh = sw, sh - INFO_BAR_H
         ww, wh = world.width, world.height
         is_flooded = _compute_flooded(world)
-        self._hillshade_L = _build_hillshade(world.surface_altitude()) 
+        self._hillshade_L = _build_hillshade(world.surface_altitude(),world.front.ground_snow)   # recalculer à chaque frame pour prendre en compte la neige
 
         # --- Couche de base : hillshade + compositing L1 optionnel ---
         if s.layer1_mode == L1_NONE:

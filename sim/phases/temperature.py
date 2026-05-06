@@ -76,7 +76,6 @@ def step(world: "World") -> None:
         neighbour_inertia = np.roll(np.roll(inertia, dr, axis=0), dc, axis=1)
         sym_inertia = (inertia + neighbour_inertia) / 2.0
         outgoing = (effective_gn_rate * sym_inertia * f.ground_temp).astype(np.float32)
-        #outgoing = (gn_rate * sym_inertia * f.ground_temp).astype(np.float32)
         incoming_ground += np.roll(np.roll(outgoing, dr, axis=0), dc, axis=1)
         total_outgoing += outgoing
 
@@ -87,13 +86,20 @@ def step(world: "World") -> None:
     # Negative → heat flows from atmosphere to ground
     net_flux = (exchange_rate * (f.ground_temp - f.atmo_temp)).astype(np.float32)
 
+    # Ground albedo reduces solar energy input, keeping ground cooler
+        # --- Thermal inertia map ---
+    albedo = np.empty((world.height, world.width), dtype=np.float32)
+    albedo[world.base_type == 0] = base_cfg["bare"]["albedo_base"]
+    albedo[world.base_type == 1] = base_cfg["sand"]["albedo_base"]
+    albedo[world.base_type == 2] = base_cfg["soil"]["albedo_base"]
     # Sun radiation adds energy to the system, increasing ground temperature
     # or lowering ground temperature if the sun is below the horizon (night).
     solar_input = world_cfg["solar_radiation"]
     sun_rotation_speed = world_cfg.get("sun_rotation_speed", 100)
     sun_phase = 2.0 * np.pi * world.tick_count / sun_rotation_speed
     sun_factor = np.sin(world.uv[:, :, 0] * 2 * np.pi + sun_phase).astype(np.float32)
-    sun_factor *= solar_input**3 * 10
+    artificial_boost = 10.0  # Boost factor to make the sun's effect more visible in the simulation 
+    sun_factor *= solar_input**3 * artificial_boost * albedo
         
     # --- Update ---
     b.ground_temp = (f.ground_temp + net_neighbour - net_flux).astype(np.float32)

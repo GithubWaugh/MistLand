@@ -84,7 +84,7 @@ class World:
     def tick(self) -> None:
         from sim.phases import (
             temperature, pressure, vegetation, nutriments,
-            evaporation, atmosphere, water, rain, wind
+            evaporation, atmosphere, water, rain, wind, snow
         )
         # Report in Console
         if (self.tick_count%100==0) :
@@ -95,12 +95,13 @@ class World:
         temperature.step(self);  self.swap_buffers(); self.sync_back_from_front()
         pressure.step(self);     self.swap_buffers(); self.sync_back_from_front()
         wind.step(self);         self.swap_buffers(); self.sync_back_from_front()
-        vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
-        nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        #vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        #nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
         evaporation.step(self);  self.swap_buffers(); self.sync_back_from_front()
         rain.step(self);         self.swap_buffers(); self.sync_back_from_front()  # Rain must be before water to update mist and ground water correctly
         water.step(self);        self.swap_buffers(); self.sync_back_from_front()
         atmosphere.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        snow.step(self);         self.swap_buffers(); self.sync_back_from_front()
 
         self.tick_count += 1
 

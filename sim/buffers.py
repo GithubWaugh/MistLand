@@ -22,6 +22,7 @@ class WorldBuffers:
 
     # --- Ground layer ---
     ground_water:       np.ndarray = field(init=False)  # float32 [0..+inf)
+    ground_snow:        np.ndarray = field(init=False)  # float32 [0..+inf)
     nutriments:         np.ndarray = field(init=False)  # uint8   [0..255]
     ground_temp:        np.ndarray = field(init=False)  # float32 (°C)
     albedo:             np.ndarray = field(init=False)  # float32 [0..1]
@@ -42,6 +43,7 @@ class WorldBuffers:
         shape = (self.height, self.width)
 
         self.ground_water       = _zeros(shape, np.float32)
+        self.ground_snow        = _zeros(shape, np.float32)
         self.nutriments         = _zeros(shape, np.uint8)
         self.ground_temp        = _zeros(shape, np.float32)
         self.albedo             = _zeros(shape, np.float32)
@@ -60,6 +62,7 @@ class WorldBuffers:
         np.copyto(self.ground_water,        other.ground_water)
         np.copyto(self.nutriments,          other.nutriments)
         np.copyto(self.ground_temp,         other.ground_temp)
+        np.copyto(self.ground_snow,         other.ground_snow)
         np.copyto(self.albedo,              other.albedo)
         np.copyto(self.pressure,            other.pressure)
         np.copyto(self.mist,                other.mist)
