@@ -147,6 +147,8 @@ def step(world: "World") -> None:
         ((veg == VEG_GRASS)   & (gt >= t_shru[0]) & (gt <= t_shru[1])) |
         ((veg == VEG_SHRUBS)  & (gt >= t_tree[0]) & (gt <= t_tree[1]))
     )
+    snow_mask = f.ground_snow > 0
+    temp_ok_growth = np.where(snow_mask,0,temp_ok_growth)
 
     # --- Nutriment requirement and cost per plant type ---
     nut_req_lichens = plants_cfg.get("lichens", {}).get("growth_requirements", {}).get("nutriments", nut_min)
