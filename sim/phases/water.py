@@ -165,6 +165,20 @@ def step(world: "World") -> None:
     if abs(error) > 1e-6:
         new_ground_water += error / (world.height * world.width)
     """
+
+    # Frozen grounds (tundra) : ground water turns to snow, ground water set to zero
+    frozen = (f.ground_temp < 0.0) & ~is_lake
+    b.ground_snow = (b.ground_snow + np.where(frozen, new_ground_water, 0.0)).astype(np.float32)
+    new_ground_water = np.where(frozen, 0.0, new_ground_water).astype(np.float32)
+
+    # Compensate water loss/gain — correction distributed over lake cells only
+    water_goal  = world.height * world.width * world.config["world"]["total_water"]
+    water_delta = float(new_ground_water.sum()) - water_goal
+    lake_count  = float(is_lake.sum())
+    if abs(water_delta) > 10 and lake_count > 0:
+        correction = -water_delta / lake_count
+        new_ground_water = np.where(is_lake, new_ground_water + correction, new_ground_water).astype(np.float32)
+
     # --- Apply to back buffer ---
     b.ground_water = new_ground_water
     b.nutriments   = new_nutriments

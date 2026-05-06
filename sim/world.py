@@ -35,6 +35,7 @@ class World:
         self.altitude   = np.zeros(shape, dtype=np.float32)
         self.base_type  = np.zeros(shape, dtype=np.uint8)
         self.fertility  = np.zeros(shape, dtype=np.float32)
+        self.initial_energy = 0.0
 
         self.uv = np.zeros((self.height, self.width, 2), dtype=np.float32)
         xs = np.linspace(0.0, 1.0, self.width,  endpoint=False, dtype=np.float32)
@@ -95,13 +96,14 @@ class World:
         temperature.step(self);  self.swap_buffers(); self.sync_back_from_front()
         pressure.step(self);     self.swap_buffers(); self.sync_back_from_front()
         wind.step(self);         self.swap_buffers(); self.sync_back_from_front()
-        #vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
-        #nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        vegetation.step(self);   self.swap_buffers(); self.sync_back_from_front()
+        nutriments.step(self);   self.swap_buffers(); self.sync_back_from_front()
         evaporation.step(self);  self.swap_buffers(); self.sync_back_from_front()
+        snow.step(self);         self.swap_buffers(); self.sync_back_from_front()
         rain.step(self);         self.swap_buffers(); self.sync_back_from_front()  # Rain must be before water to update mist and ground water correctly
         water.step(self);        self.swap_buffers(); self.sync_back_from_front()
         atmosphere.step(self);   self.swap_buffers(); self.sync_back_from_front()
-        snow.step(self);         self.swap_buffers(); self.sync_back_from_front()
+        
 
         self.tick_count += 1
 

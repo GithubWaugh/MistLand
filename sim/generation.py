@@ -38,6 +38,7 @@ def generate(world: World, seed: int = 42) -> None:
     _distribute_temperature(world)
     _update_albedo(world)
     _init_wind(world)   # must be last — uses pressure computed in _distribute_temperature
+    world.initial_energy = world.total_energy()
 
 
 # ------------------------------------------------------------------

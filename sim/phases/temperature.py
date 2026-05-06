@@ -48,6 +48,7 @@ _NEIGHBOURS = [
 def step(world: "World") -> None:
     world_cfg = world.config["world"]
     cfg      = world.config["temperature"]
+    atmos_cfg = world.config["atmosphere"]
     base_cfg = world.config["base_types"]
 
     # Single exchange rate for ground ↔ atmosphere
@@ -92,6 +93,8 @@ def step(world: "World") -> None:
     albedo[world.base_type == 0] = base_cfg["bare"]["albedo_base"]
     albedo[world.base_type == 1] = base_cfg["sand"]["albedo_base"]
     albedo[world.base_type == 2] = base_cfg["soil"]["albedo_base"]
+    
+    albedo = np.where(world.front.ground_snow > 0, 0.95, albedo)  # Snow-covered ground is highly reflective (high albedo), keeping it cooler and preserving snow cover longer (positive feedback)
     # Sun radiation adds energy to the system, increasing ground temperature
     # or lowering ground temperature if the sun is below the horizon (night).
     solar_input = world_cfg["solar_radiation"]
@@ -100,8 +103,24 @@ def step(world: "World") -> None:
     sun_factor = np.sin(world.uv[:, :, 0] * 2 * np.pi + sun_phase).astype(np.float32)
     artificial_boost = 10.0  # Boost factor to make the sun's effect more visible in the simulation 
     sun_factor *= solar_input**3 * artificial_boost * albedo
-        
-    # --- Update ---
+
+    """
+    # Felt temperature includes mist cooling effect
+    mist_cooling_factor = atmos_cfg.get("mist_cooling_factor", 0.0)
+    f.atmo_temp -= mist_cooling_factor * world.front.mist
+    """
+
+    # --- Update Temperature ---
     b.ground_temp = (f.ground_temp + net_neighbour - net_flux).astype(np.float32)
-    b.ground_temp += sun_factor  # Add solar energy input to ground temperature   
-    b.atmo_temp   = (f.atmo_temp   + net_flux).astype(np.float32)
+    b.ground_temp += sun_factor  # Add solar energy input to ground temperature 
+    # Felt temperature include altitude cooling effect (lapse rate)
+    lapse_rate = atmos_cfg.get("lapse_rate", 0.0)
+    f.atmo_temp -= lapse_rate * world.surface_altitude()**8 
+    b.atmo_temp = (f.atmo_temp + net_flux).astype(np.float32)
+    b.atmo_temp += sun_factor * 0.5  # Atmosphere also receives some solar energy, but less than the ground (adjust factor as needed)
+
+    # Compensate energy loss/gain
+    energy_delta = world.total_energy() - world.initial_energy
+    if abs(energy_delta) > 10:
+        fraction = energy_delta / (world.height * world.width)
+        b.ground_temp = np.add(b.ground_temp, -fraction).astype(np.float32)

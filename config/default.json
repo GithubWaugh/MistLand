@@ -3,7 +3,7 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
-    "seed": 314159,
+    "seed": 31415,
      "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
     "grid_width": 512,
     "grid_height": 256,
@@ -11,7 +11,7 @@
     "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
     "total_energy": 50000,
     "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation).",
-    "solar_radiation": 0.25,
+    "solar_radiation": 0.5,
     "_comment_solar_radiation": "Base solar energy input per tick. Modulated by day/night cycle and albedo. Higher = more energy, higher temperatures, more evaporation.",
     "sun_rotation_speed": 200,
     "_comment_sun_rotation_speed": "Speed of the sun's rotation around the world. Higher = faster day/night cycle."
@@ -35,7 +35,7 @@
       "thermal_inertia": 0.1,
       "water_retention": 0.05,
       "flooding_threshold": 0.5,
-      "albedo_base": 0.4
+      "albedo_base": 0.6
     },
     "soil": {
       "_comment": "Soil — moderate inertia, good water retention, hard to flood (high threshold).",
@@ -62,29 +62,34 @@
     "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
     "k_temp": 0.01,
     "_comment_k_temp": "Weight of temperature deviation in pressure formula. Higher = temperature has more influence on wind.",
-    "k_alt": 0.5,
+    "k_alt": 0.6,
     "_comment_k_alt": "Weight of altitude in pressure formula. Higher = mountains create stronger pressure gradients.",
     "temp_ref": 15.0,
     "_comment_temp_ref": "Reference temperature (°C) at which pressure equals P_base. Cells warmer than this have lower pressure.",
     "k_wind": 0.5,
     "_comment_k_wind": "Wind strength coefficient. wind(A→B) = k_wind * (pressure(A) - pressure(B)). Higher = stronger winds.",
-    "pressure_damping": 0.1,
+    "pressure_damping": 0.15,
     "_comment_pressure_damping": "How fast pressure converges toward its target each tick. 1.0 = instant, 0.1 = slow drift (more stable).",
     "wind_transport_rate": 0.075,
     "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick.",
     "mist_diffusion_rate": 0.01,
     "mist_advection_rate": 0.25,
-    "mist_pressure_factor": 0.05,
-    "wind_advection_strength": 0.5,
+    "mist_pressure_factor": 0.0001,
+    "_comment_mist_pressure_factor": "mist augments pressure by this amount per mist level, simulating the weight of water vapor. Higher = mistier areas have higher pressure, affecting wind patterns.",
+    "wind_advection_strength": 0.75,
     "wind_viscosity": 0.25,
     "wind_damping": 0.98,
     "wind_max_speed": 5.0,
     "wind_noise_strength": 0.005,
     "_comment_wind_noise_strength": "Amplitude of the noise perturbation added to wind each tick.",
-    "wind_noise_coarse_factor": 32,
+    "wind_noise_coarse_factor": 16,
     "_comment_wind_noise_coarse_factor": "Downscale factor for the coarse noise grid (W/factor × H/factor). Higher = larger, smoother eddies.",
     "wind_noise_persistence": 0.95,
-    "_comment_wind_noise_persistence": "O-U persistence per tick [0..1]. 0.99 = significant change every ~100 ticks; 0.9 = every ~10 ticks."
+    "_comment_wind_noise_persistence": "O-U persistence per tick [0..1]. 0.99 = significant change every ~100 ticks; 0.9 = every ~10 ticks.",
+    "mist_cooling_factor": 0.001,
+    "_comment_mist_cooling_factor": "Temperature reduction (°C) per mist level. Higher = mist cools the atmosphere more, increasing pressure and wind effects.",
+    "lapse_rate": 0.15,
+    "_comment_lapse_rate": "Temperature decrease (°C) per altitude unit. Higher = stronger cooling at high altitudes, increasing pressure gradients and wind effects around mountains."
   },
 
   "water": {
@@ -93,7 +98,7 @@
     "_comment_evap_temp_threshold": "Ground temperature (°C) above which evaporation occurs. Lower = more evaporation overall.",
     "evap_rate": 0.001,
     "_comment_evap_rate": "Fraction of available ground water evaporated per tick when above threshold.",
-    "evap_water_temp_threshold": 25.0,
+    "evap_water_temp_threshold": 15.0,
     "_comment_evap_water_temp_threshold": "Water temperature (°C) above which evaporation occurs. Lower = more evaporation overall.",
     "runoff_rate": 0.05,
     "_comment_runoff_rate": "Fraction of available water flowing downhill per tick. Lower = slower rivers, fewer oscillations.",
@@ -111,7 +116,7 @@
     "_comment_rain_temp_threshold": "Atmospheric temperature (°C) below which rain can occur. Raise to make rain more frequent.",
     "rain_humidity_threshold": 3,
     "_comment_rain_humidity_threshold": "Minimum mist level [0..7] required to trigger rain. Lower = rain more easily.",
-    "rain_rate": 0.1,
+    "rain_rate": 0.05,
     "_comment_rain_rate": "Fraction of mist converted to ground water per rainy tick.",
     "rain_saturation_threshold": 5.0,
     "_comment_rain_saturation_threshold": "Mist level at which rain is forced, even if temperature is above threshold. Simulates heavy storms when mist is maxed out."
@@ -119,13 +124,13 @@
 
   "snow": {
     "_comment": "Controls snow dynamics. Snow accumulates when atmo_temp < threshold, and melts when atmo_temp > melt_threshold.",
-    "snow_temp_threshold": 0.0,
+    "snow_temp_threshold": -1,
     "_comment_snow_temp_threshold": "Atmospheric temperature (°C) below which snow can accumulate. Lower = less snow overall.",
-    "mist_to_snow_rate": 0.05,
+    "mist_to_snow_rate": 0.01,
     "_comment_mist_to_snow_rate": "Fraction of mist converted to snow per tick when temperature is below threshold.",
-    "snow_melting_threshold": 2.0,
+    "snow_melting_threshold": 1.0,
     "_comment_snow_to_water_threshold": "Atmospheric temperature (°C) above which snow starts melting. Higher = snow lasts longer.",
-    "snow_melting_rate": 0.025,
+    "snow_melting_rate": 0.01,
     "_comment_snow_melting_rate": "Fraction of ground snow converted to ground water per tick when above melt threshold."
   },
 

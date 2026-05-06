@@ -37,5 +37,6 @@ def step(world: "World") -> None:
     # --- Snow melting ---
     can_melt = (b.ground_temp > snow_melting_threshold) & (b.ground_snow >= 0.01)
     snow_meltable = np.where(can_melt, np.minimum(b.ground_snow, snow_melting_rate), 0.0)
-    b.ground_snow -= snow_meltable * snow_melting_rate
-    b.ground_water += snow_meltable * snow_melting_rate
+    melting_multiplier = np.minimum(10, np.maximum(0, b.atmo_temp) / 10)  # Melt faster if atmosphere is warmer (up to 10x at 10°C or above)
+    b.ground_snow -= snow_meltable * snow_melting_rate * melting_multiplier
+    b.ground_water += snow_meltable * snow_melting_rate * melting_multiplier
