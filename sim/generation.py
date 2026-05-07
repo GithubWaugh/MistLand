@@ -143,7 +143,7 @@ def _generate_fertility(world, seed):
         if mx - mn > 1e-6:
             layer = (layer - mn) / (mx - mn) * 2.0 - 1.0
         result[bt == base_val] = layer[bt == base_val].astype(np.float32)
-    world.fertility = abs(result)
+    world.fertility = gaussian_filter(abs(result), sigma=1.0).astype(np.float32)
 
 
 # ------------------------------------------------------------------
