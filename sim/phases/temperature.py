@@ -101,7 +101,7 @@ def step(world: "World") -> None:
     sun_rotation_speed = world_cfg.get("sun_rotation_speed", 100)
     sun_phase = 2.0 * np.pi * world.tick_count / sun_rotation_speed
     sun_factor = np.sin(world.uv[:, :, 0] * 2 * np.pi + sun_phase).astype(np.float32)
-    artificial_boost = 10.0  # Boost factor to make the sun's effect more visible in the simulation 
+    artificial_boost = 15.0  # Boost factor to make the sun's effect more visible in the simulation 
     sun_factor *= solar_input**3 * artificial_boost * albedo
 
     """

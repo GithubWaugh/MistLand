@@ -3,7 +3,7 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
-    "seed": 31415,
+    "seed": 3141599,
      "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
     "grid_width": 512,
     "grid_height": 256,
