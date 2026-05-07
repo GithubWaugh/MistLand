@@ -31,7 +31,7 @@ def step(world: "World") -> None:
         (f.atmo_temp < temp_threshold) &
         (f.mist >= humidity_threshold)
     )
-    is_raining |= (f.mist > 6.0)  # Force rain if mist is maxed out, even if temp is above threshold
+    is_raining |= (f.mist > saturation_threshold)  # Force rain if mist is maxed out, even if temp is above threshold
 
     # Mist lost this tick (float)
     mist_loss = np.where(

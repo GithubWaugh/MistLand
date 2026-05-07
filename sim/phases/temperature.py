@@ -46,18 +46,18 @@ _NEIGHBOURS = [
 
 
 def step(world: "World") -> None:
-    world_cfg = world.config["world"]
-    cfg      = world.config["temperature"]
-    atmos_cfg = world.config["atmosphere"]
-    base_cfg = world.config["base_types"]
+    world_cfg   = world.config["world"]
+    temp_cfg         = world.config["temperature"]
+    atmos_cfg   = world.config["atmosphere"]
+    base_cfg    = world.config["base_types"]
 
     # Single exchange rate for ground ↔ atmosphere
     # Derived from the average of the two former rates
-    ga_rate = cfg["ground_to_atmosphere_rate"]
-    ag_rate = cfg["atmosphere_to_ground_rate"]
+    ga_rate = temp_cfg["ground_to_atmosphere_rate"]
+    ag_rate = temp_cfg["atmosphere_to_ground_rate"]
     exchange_rate = (ga_rate + ag_rate) / 2.0
 
-    gn_rate = cfg["ground_to_neighbour_rate"]
+    gn_rate = temp_cfg["ground_to_neighbour_rate"]
 
     f = world.front
     b = world.back
@@ -67,7 +67,7 @@ def step(world: "World") -> None:
     inertia[world.base_type == 0] = base_cfg["bare"]["thermal_inertia"]
     inertia[world.base_type == 1] = base_cfg["sand"]["thermal_inertia"]
     inertia[world.base_type == 2] = base_cfg["soil"]["thermal_inertia"]
-    inertia[world.front.ground_water>1] = 0.05  # Water has high thermal inertia, slows down temperature changes
+    inertia[world.front.ground_water>1] = 0.1  # Water has high thermal inertia, slows down temperature changes
 
     # --- Ground ↔ neighbours (conserved by construction) ---
     incoming_ground = np.zeros_like(f.ground_temp)
@@ -76,9 +76,9 @@ def step(world: "World") -> None:
     for dr, dc in _NEIGHBOURS:
         neighbour_inertia = np.roll(np.roll(inertia, dr, axis=0), dc, axis=1)
         sym_inertia = (inertia + neighbour_inertia) / 2.0
-        outgoing = (effective_gn_rate * sym_inertia * f.ground_temp).astype(np.float32)
-        incoming_ground += np.roll(np.roll(outgoing, dr, axis=0), dc, axis=1)
-        total_outgoing += outgoing
+        outgoing_ground = (effective_gn_rate * sym_inertia * f.ground_temp).astype(np.float32)
+        incoming_ground += np.roll(np.roll(outgoing_ground, dr, axis=0), dc, axis=1)
+        total_outgoing += outgoing_ground
 
     net_neighbour = incoming_ground - total_outgoing
 
@@ -93,16 +93,15 @@ def step(world: "World") -> None:
     albedo[world.base_type == 0] = base_cfg["bare"]["albedo_base"]
     albedo[world.base_type == 1] = base_cfg["sand"]["albedo_base"]
     albedo[world.base_type == 2] = base_cfg["soil"]["albedo_base"]
-    
     albedo = np.where(world.front.ground_snow > 0, 0.95, albedo)  # Snow-covered ground is highly reflective (high albedo), keeping it cooler and preserving snow cover longer (positive feedback)
     # Sun radiation adds energy to the system, increasing ground temperature
     # or lowering ground temperature if the sun is below the horizon (night).
     solar_input = world_cfg["solar_radiation"]
     sun_rotation_speed = world_cfg.get("sun_rotation_speed", 100)
-    sun_phase = 2.0 * np.pi * world.tick_count / sun_rotation_speed
+    sun_phase = 2.0 * np.pi * float(world.tick_count) / sun_rotation_speed
     sun_factor = np.sin(world.uv[:, :, 0] * 2 * np.pi + sun_phase).astype(np.float32)
-    artificial_boost = 15.0  # Boost factor to make the sun's effect more visible in the simulation 
-    sun_factor *= solar_input**3 * artificial_boost * albedo
+    artificial_boost = 1.0  # Boost factor to make the sun's effect more visible in the simulation 
+    sun_factor *= solar_input * artificial_boost * (1-albedo)  # Higher solar input has a stronger effect, but is modulated by albedo (reflectivity). Bare ground absorbs more energy, while snow-covered areas reflect most of it.
 
     """
     # Felt temperature includes mist cooling effect
@@ -115,12 +114,14 @@ def step(world: "World") -> None:
     b.ground_temp += sun_factor  # Add solar energy input to ground temperature 
     # Felt temperature include altitude cooling effect (lapse rate)
     lapse_rate = atmos_cfg.get("lapse_rate", 0.0)
-    f.atmo_temp -= lapse_rate * world.surface_altitude()**8 
+    f.atmo_temp -= lapse_rate * np.maximum(world.surface_altitude(),0.5).astype(np.float32)  # Higher altitudes are cooler, but only count altitudes above a small threshold to prevent excessive cooling in flooded areas
     b.atmo_temp = (f.atmo_temp + net_flux).astype(np.float32)
     b.atmo_temp += sun_factor * 0.5  # Atmosphere also receives some solar energy, but less than the ground (adjust factor as needed)
 
+    
     # Compensate energy loss/gain
     energy_delta = world.total_energy() - world.initial_energy
     if abs(energy_delta) > 10:
         fraction = energy_delta / (world.height * world.width)
         b.ground_temp = np.add(b.ground_temp, -fraction).astype(np.float32)
+    

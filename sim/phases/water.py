@@ -172,12 +172,13 @@ def step(world: "World") -> None:
     new_ground_water = np.where(frozen, 0.0, new_ground_water).astype(np.float32)
 
     # Compensate water loss/gain — correction distributed over lake cells only
-    water_goal  = world.height * world.width * world.config["world"]["total_water"]
-    water_delta = float(new_ground_water.sum()) - water_goal
-    lake_count  = float(is_lake.sum())
-    if abs(water_delta) > 10 and lake_count > 0:
-        correction = -water_delta / lake_count
-        new_ground_water = np.where(is_lake, new_ground_water + correction, new_ground_water).astype(np.float32)
+    if (world.tick_count % 10 == 0):  # Only apply correction every 10 ticks to avoid over-correction and oscillations
+        water_goal  = world.height * world.width * world.config["world"]["total_water"]
+        water_delta = float(new_ground_water.sum()) - water_goal
+        lake_count  = float(is_lake.sum())
+        if abs(water_delta) > 10 and lake_count > 0:
+            correction = -water_delta / lake_count
+            new_ground_water = np.where(is_lake, new_ground_water + correction, new_ground_water).astype(np.float32)
 
     # --- Apply to back buffer ---
     b.ground_water = new_ground_water

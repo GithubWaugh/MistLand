@@ -52,12 +52,12 @@ WINDOW_H          = 512
 INFO_BAR_H        = 24
 ZOOM_MIN          = 1
 ZOOM_MAX          = 32
-ZOOM_DEFAULT      = 3
+ZOOM_DEFAULT      = 2
 INFO_FONT_SIZE    = 14
 INSPECT_FONT_SIZE = 13
 
 SPEED_STEPS   = [0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
-SPEED_DEFAULT = 2
+SPEED_DEFAULT = 6
 
 # ---------------------------------------------------------------------------
 # Layer 1 — données exclusives
@@ -106,7 +106,7 @@ class RendererState:
     zoom        : int   = ZOOM_DEFAULT
     cam_x       : float = 0.0
     cam_y       : float = 0.0
-    layer1_mode : int   = L1_NONE
+    layer1_mode : int   = L1_SOIL
     layer2_mode : int   = L2_NONE
     show_wind   : bool  = False
     show_rain   : bool  = False

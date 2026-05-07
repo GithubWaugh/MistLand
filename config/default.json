@@ -3,7 +3,7 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
-    "seed": 3141599,
+    "seed": 3141592657,
      "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
     "grid_width": 512,
     "grid_height": 256,
@@ -50,7 +50,7 @@
     "_comment": "Controls heat exchange rates between ground, atmosphere and neighbours. All rates in [0..1] fraction per tick.",
     "ground_to_neighbour_rate": 0.02,
     "_comment_ground_to_neighbour_rate": "Fraction of ground temperature radiated to each of the 8 neighbours per tick. Modulated by thermal_inertia.",
-    "ground_to_atmosphere_rate": 0.1,
+    "ground_to_atmosphere_rate": 0.01,
     "_comment_ground_to_atmosphere_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with atmosphere_to_ground_rate).",
     "atmosphere_to_ground_rate": 0.01,
     "_comment_atmosphere_to_ground_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with ground_to_atmosphere_rate)."
@@ -68,27 +68,27 @@
     "_comment_temp_ref": "Reference temperature (°C) at which pressure equals P_base. Cells warmer than this have lower pressure.",
     "k_wind": 0.5,
     "_comment_k_wind": "Wind strength coefficient. wind(A→B) = k_wind * (pressure(A) - pressure(B)). Higher = stronger winds.",
-    "pressure_damping": 0.15,
+    "pressure_damping": 0.1,
     "_comment_pressure_damping": "How fast pressure converges toward its target each tick. 1.0 = instant, 0.1 = slow drift (more stable).",
     "wind_transport_rate": 0.075,
     "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick.",
     "mist_diffusion_rate": 0.01,
-    "mist_advection_rate": 0.25,
-    "mist_pressure_factor": 0.0001,
+    "mist_advection_rate": 1,
+    "mist_pressure_factor": 0.1,
     "_comment_mist_pressure_factor": "mist augments pressure by this amount per mist level, simulating the weight of water vapor. Higher = mistier areas have higher pressure, affecting wind patterns.",
-    "wind_advection_strength": 0.75,
+    "wind_advection_strength": 0.25,
     "wind_viscosity": 0.25,
-    "wind_damping": 0.98,
+    "wind_damping": 0.95,
     "wind_max_speed": 5.0,
-    "wind_noise_strength": 0.005,
+    "wind_noise_strength": 0.01,
     "_comment_wind_noise_strength": "Amplitude of the noise perturbation added to wind each tick.",
-    "wind_noise_coarse_factor": 16,
+    "wind_noise_coarse_factor": 32,
     "_comment_wind_noise_coarse_factor": "Downscale factor for the coarse noise grid (W/factor × H/factor). Higher = larger, smoother eddies.",
-    "wind_noise_persistence": 0.95,
+    "wind_noise_persistence": 0.99,
     "_comment_wind_noise_persistence": "O-U persistence per tick [0..1]. 0.99 = significant change every ~100 ticks; 0.9 = every ~10 ticks.",
-    "mist_cooling_factor": 0.001,
+    "mist_cooling_factor": 0.0,
     "_comment_mist_cooling_factor": "Temperature reduction (°C) per mist level. Higher = mist cools the atmosphere more, increasing pressure and wind effects.",
-    "lapse_rate": 0.15,
+    "lapse_rate": 0.1,
     "_comment_lapse_rate": "Temperature decrease (°C) per altitude unit. Higher = stronger cooling at high altitudes, increasing pressure gradients and wind effects around mountains."
   },
 
@@ -130,7 +130,7 @@
     "_comment_mist_to_snow_rate": "Fraction of mist converted to snow per tick when temperature is below threshold.",
     "snow_melting_threshold": 1.0,
     "_comment_snow_to_water_threshold": "Atmospheric temperature (°C) above which snow starts melting. Higher = snow lasts longer.",
-    "snow_melting_rate": 0.025,
+    "snow_melting_rate": 0.1,
     "_comment_snow_melting_rate": "Fraction of ground snow converted to ground water per tick when above melt threshold."
   },
 
@@ -138,7 +138,7 @@
     "_comment": "Controls nutriment dynamics : diffusion, lake generation, and runoff transport.",
     "diffusion_rate": 0.01,
     "_comment_diffusion_rate": "Fraction of a cell's nutriments diffused to each neighbour per tick. Simulates microfauna movement.",
-    "lake_generation_rate": 1,
+    "lake_generation_rate": 0.1,
     "_comment_lake_generation_rate": "Nutriment units generated for lake neighbours per tick. Lakes fertilise their banks.",
     "runoff_transport_rate": 0.1,
     "_comment_runoff_transport_rate": "Fraction of lake outflow converted to nutriments for downstream cells.",
@@ -185,12 +185,12 @@
         "water": 0.02,
         "temperature": [-10.0, 40.0],
         "altitude_max": 0.9,
-        "nutriments": 5,
+        "nutriments": 0.1,
         "mist": 1.0
       },
       "growth_costs": {
         "water": 0.02,
-        "nutriments": 0
+        "nutriments": 0.05
       },
       "albedo_reduction": 0.05
     },
@@ -200,12 +200,12 @@
         "water": 0.04,
         "temperature": [-5, 35.0],
         "altitude_max": 0.8,
-        "nutriments": 10,
+        "nutriments": 0.3,
         "mist": 3.0
       },
       "growth_costs": {
         "water": 0.02,
-        "nutriments": 0
+        "nutriments": 0.2
       },
       "albedo_reduction": 0.05
     },
@@ -215,12 +215,12 @@
         "water": 0.06,
         "temperature": [5.0, 30.0],
         "altitude_max": 0.7,
-        "nutriments": 15,
+        "nutriments": 0.5,
         "mist": 4.0
       },
       "growth_costs": {
         "water": 0.03,
-        "nutriments": 5
+        "nutriments": 0.4
       },
       "albedo_reduction": 0.1
     },
@@ -230,12 +230,12 @@
         "water": 0.08,
         "temperature": [10.0, 25.0],
         "altitude_max": 0.6,
-        "nutriments": 20,
+        "nutriments": 0.9,
         "mist": 5.0
       },
       "growth_costs": {
         "water": 0.05,
-        "nutriments": 10
+        "nutriments": 0.7
       },
       "albedo_reduction": 0.15
     }

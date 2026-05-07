@@ -34,13 +34,12 @@ def step(world: "World") -> None:
 
     surface_altitude = world.surface_altitude()  
 
-
     # Target pressure (vectorized over entire grid)
     target = (
         P_base
         - k_temp * (world.front.atmo_temp - temp_ref)
         - k_alt  * surface_altitude
-        + 0*world.front.mist * (1+cfg.get("mist_pressure_factor", 0.0))/7  # Optional mist contribution to pressure
+        + world.front.mist * (cfg.get("mist_pressure_factor", 0.0))/7  # Optional mist contribution to pressure
     ).astype(np.float32)
 
     # Smooth transition toward target
