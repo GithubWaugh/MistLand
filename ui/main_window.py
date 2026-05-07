@@ -8,15 +8,17 @@ The native OS menu bar provides File / New Sim / Adjust Params / Help.
 """
 
 import os
+import shutil
 import time
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 
 import pygame
 
 from sim.world import World
 from sim.generation import generate
 from ui.app import Renderer, WINDOW_W, WINDOW_H, INFO_BAR_H, SPEED_STEPS
+from ui.recorder import VideoRecorder
 
 
 class MainWindow:
@@ -29,6 +31,7 @@ class MainWindow:
         self.config   = config
         self.world    = None
         self.renderer = None
+        self.recorder: VideoRecorder | None = None
 
         self._tick_accum = 0.0
         self._last_time  = 0.0
@@ -52,7 +55,8 @@ class MainWindow:
         # Map Tkinter keysym to pygame key constant
         keymap = {
             "space": pygame.K_SPACE,
-            "a": pygame.K_a, "q": pygame.K_q, "i": pygame.K_i, "m": pygame.K_m,
+            "a": pygame.K_a, "q": pygame.K_q, "i": pygame.K_i,
+            "m": pygame.K_m, "r": pygame.K_r,
             # Chiffres avec et sans shift (AZERTY)
             "1": pygame.K_1, "ampersand":    pygame.K_1,   # &
             "2": pygame.K_2, "eacute":       pygame.K_2,   # é
@@ -134,6 +138,7 @@ class MainWindow:
         self.world    = world
         self.renderer = Renderer(world)
         self.renderer.init_fonts()
+        self.recorder = VideoRecorder(self.config)
         self._last_time  = time.perf_counter()
         self._tick_accum = 0.0
         self.root.after(16, self._loop)
@@ -180,9 +185,16 @@ class MainWindow:
             if "speed_down" in actions:
                 state.speed_idx = max(state.speed_idx - 1, 0)
                 self._tick_accum = 0.0
+            if "toggle_rec" in actions and self.recorder:
+                self.recorder.toggle_pause()
+                state.rec_paused = self.recorder.paused
 
         # Render
         self.renderer.render(self.screen, self.world)
+
+        # Capture frame after render (uses the fully composited screen)
+        if self.recorder:
+            self.recorder.add_frame(self.screen, self.world.tick_count)
 
         self.root.after(16, self._loop)
 
@@ -229,5 +241,31 @@ class MainWindow:
         help_dialog(self.root)
 
     def _on_quit(self) -> None:
+        if self.recorder and self.recorder.frame_count > 0:
+            self._finalize_recording()
         pygame.quit()
         self.root.destroy()
+
+    def _finalize_recording(self) -> None:
+        dlg = tk.Toplevel(self.root)
+        dlg.title("MistLand")
+        dlg.resizable(False, False)
+        tk.Label(dlg, text="Encodage en cours...", padx=30, pady=20,
+                 font=("TkDefaultFont", 12)).pack()
+        dlg.update()
+
+        tmp_path = self.recorder.encode()
+        dlg.destroy()
+
+        if tmp_path is None:
+            return
+        dest = filedialog.asksaveasfilename(
+            parent=self.root,
+            defaultextension=".mp4",
+            filetypes=[("Vidéo MP4", "*.mp4"), ("Tous les fichiers", "*.*")],
+            title="Enregistrer la vidéo",
+        )
+        if dest:
+            shutil.move(tmp_path, dest)
+        else:
+            os.remove(tmp_path)

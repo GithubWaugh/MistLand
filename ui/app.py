@@ -119,6 +119,7 @@ class RendererState:
     pan_start_my: int   = 0
     pan_start_cx: float = 0.0
     pan_start_cy: float = 0.0
+    rec_paused  : bool  = False
 
 
 # ---------------------------------------------------------------------------
@@ -655,16 +656,17 @@ class Renderer:
         spd  = f"{SPEED_STEPS[s.speed_idx]:.2f}".rstrip('0').rstrip('.') + " t/s"
         l3st = (("wind" if s.show_wind else "---")
                 + "+" + ("rain" if s.show_rain else "---"))
+        rec_str = "---" if s.rec_paused else "REC"
         info = (
             f"Tick {world.tick_count:5d}  |  Zoom {s.zoom:2d}x  |  "
-            f"[{'PAUSED' if s.paused else spd}]  ||  "
+            f"[{'PAUSED' if s.paused else spd}]  |  [{rec_str}]  ||  "
             f"L1:{L1_NAMES[s.layer1_mode]}  "
             f"L2:{L2_NAMES[s.layer2_mode]}  "
             f"L3:{l3st}  "
             f"Mist:{'on' if s.show_mist else 'off'}  "
             f"Inspect:{'on' if s.show_inspect else 'off'}  |  "
             f"[1]L1 [2]L2 [3]wind [4]rain [M]mist [I]inspect  "
-            f"[A]pause [SPC]step [PgUp/Dn]speed"
+            f"[A]pause [R]rec [SPC]step [PgUp/Dn]speed"
         )
         screen.blit(self._font.render(info, True, (180, 180, 180)),
                     (8, sh - INFO_BAR_H + 4))
@@ -700,6 +702,8 @@ class Renderer:
                 s.show_mist = not s.show_mist
             elif k == pygame.K_i:
                 s.show_inspect = not s.show_inspect
+            elif k == pygame.K_r:
+                actions.add('toggle_rec')
         elif event.type == pygame.MOUSEWHEEL:
             mx, my = pygame.mouse.get_pos()
             wx = s.cam_x + mx / s.zoom; wy = s.cam_y + my / s.zoom
