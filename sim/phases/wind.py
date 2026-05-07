@@ -79,9 +79,7 @@ def step(world: "World") -> None:
     lap_y = (np.roll(wy,  1, axis=0) + np.roll(wy, -1, axis=0) +
              np.roll(wy,  1, axis=1) + np.roll(wy, -1, axis=1) - 4.0 * wy)
 
-    noise_strength  = cfg.get("wind_noise_strength",      0.1)
-    coarse_factor   = int(cfg.get("wind_noise_coarse_factor", 32))
-    persistence     = float(cfg.get("wind_noise_persistence",  0.99))
+ 
 
     # --- 4. Update with damping ---
     new_wx = (wx - k_wind * dPdx + adv_str * adv_x + viscosity * lap_x) * damping
@@ -91,6 +89,9 @@ def step(world: "World") -> None:
     # Maintain a small coarse noise field (H/factor × W/factor) on the world object.
     # Each tick, blend it toward a new white-noise sample (Ornstein-Uhlenbeck process).
     # Upscale with bilinear zoom — total cost: ~256 ops + one bilinear pass.
+    noise_strength  = cfg.get("wind_noise_strength",      0.1)
+    coarse_factor   = int(cfg.get("wind_noise_coarse_factor", 32))
+    persistence     = float(cfg.get("wind_noise_persistence",  0.99))
     cH = max(2, world.height // coarse_factor)
     cW = max(2, world.width  // coarse_factor)
     if world._wind_noise_wx is None:

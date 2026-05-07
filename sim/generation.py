@@ -34,6 +34,7 @@ def generate(world: World, seed: int = 42) -> None:
     _generate_altitude(world, seed)
     _generate_base_type(world, seed)
     _generate_fertility(world, seed)
+    _generate_veg_tick_counter(world, seed)
     _distribute_water(world)
     _distribute_temperature(world)
     _update_albedo(world)
@@ -71,6 +72,21 @@ def _value_noise_2d(h, w, freq, seed):
             v01*(1-ux)*uy     + v11*ux*uy)
 
 
+def _white_noise_2d(h: int, w: int, seed: int) -> np.ndarray:
+    """Independent per-cell deterministic noise, float32, normalized to [0..1].
+
+    Unlike _value_noise_2d (which interpolates between lattice points),
+    each cell gets its own independent hash value — no spatial coherence.
+    The result is fully reproducible for a given seed.
+    """
+    xs = np.arange(w, dtype=np.int32)
+    ys = np.arange(h, dtype=np.int32)
+    xg, yg = np.meshgrid(xs, ys)
+    return ((_hash2(xg, yg, seed) + 1.0) * 0.5).astype(np.float32)
+
+
+
+
 # ------------------------------------------------------------------
 # Altitude
 # ------------------------------------------------------------------
@@ -102,6 +118,13 @@ def _generate_base_type(world, seed):
     bt[noise >= 0.6] = BASE_SOIL
     world.base_type = bt
 
+# ------------------------------------------------------------------
+# Veg tick counter (for desynchronised vegetation updates)
+# ------------------------------------------------------------------
+def _generate_veg_tick_counter(world, seed):
+    h, w = world.height, world.width
+    noise = _white_noise_2d(h, w, seed + 300007)
+    world.veg_tick_counter = (noise * 50 * np.iinfo(np.uint16).max).astype(np.uint16)
 
 # ------------------------------------------------------------------
 # Fertility

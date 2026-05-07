@@ -203,7 +203,7 @@ def step(world: "World") -> None:
     water_ok_growth = gw >= eff_water_req    # per-plant — used for growth gating
     temp_ok   = (f.ground_temp >= temp_min) & (f.ground_temp <= temp_max)
     nut_ok    = nut.astype(np.float32) >= eff_nut_req
-    timer_ok  = counter >= growth_period
+    
     # Lichens et grass peuvent utiliser l'humidité de l'air — seuil par type de plante
     _mist_default = cfg.get("mist_water_threshold", 3.0)
     mist_req_lichens = plants_cfg.get("lichens", {}).get("growth_requirements", {}).get("mist", _mist_default)
@@ -217,6 +217,23 @@ def step(world: "World") -> None:
         default=_mist_default
     ).astype(np.float32)
     mist_ok = f.mist >= mist_req
+
+    # --- Timer : is the cell ready to grow to the next level ? ---
+    # growth_time is the waiting period before growing INTO the next level,
+    # so VEG_NONE uses gt_lichens, VEG_LICHENS uses gt_grass, etc.
+    gt_lichens = plants_cfg.get("lichens", {}).get("growth_time", growth_period)
+    gt_grass   = plants_cfg.get("grass",   {}).get("growth_time", growth_period)
+    gt_shrubs  = plants_cfg.get("shrubs",  {}).get("growth_time", growth_period)
+    gt_trees   = plants_cfg.get("trees",   {}).get("growth_time", growth_period)
+
+    growth_time = np.select(
+        [veg == VEG_NONE, veg == VEG_LICHENS, veg == VEG_GRASS, veg == VEG_SHRUBS],
+        [gt_lichens,       gt_grass,           gt_shrubs,        gt_trees],
+        default=growth_period
+    ).astype(np.uint16)
+
+    timer_ok = counter >= growth_time
+    counter  = np.where(timer_ok, np.uint16(0), counter).astype(np.uint16)
 
     can_grow  = water_ok_growth & temp_ok_growth & timer_ok & (veg < veg_max) & altitude_ok
 

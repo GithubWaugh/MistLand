@@ -192,6 +192,7 @@
         "water": 0.02,
         "nutriments": 0.05
       },
+      "growth_time": 10,
       "albedo_reduction": 0.05
     },
     "grass": {
@@ -207,6 +208,7 @@
         "water": 0.02,
         "nutriments": 0.2
       },
+      "growth_time": 20,
       "albedo_reduction": 0.05
     },
     "shrubs": {
@@ -222,6 +224,7 @@
         "water": 0.03,
         "nutriments": 0.4
       },
+      "growth_time": 50,
       "albedo_reduction": 0.1
     },
     "trees" : {
@@ -237,6 +240,7 @@
         "water": 0.05,
         "nutriments": 0.7
       },
+      "growth_time": 100,
       "albedo_reduction": 0.15
     }
   }
