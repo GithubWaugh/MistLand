@@ -23,7 +23,7 @@ class WorldBuffers:
     # --- Ground layer ---
     ground_water:       np.ndarray = field(init=False)  # float32 [0..+inf)
     ground_snow:        np.ndarray = field(init=False)  # float32 [0..+inf)
-    nutriments:         np.ndarray = field(init=False)  # uint8   [0..255]
+    nutriments:         np.ndarray = field(init=False)  # float32 [0..+inf)
     ground_temp:        np.ndarray = field(init=False)  # float32 (°C)
     albedo:             np.ndarray = field(init=False)  # float32 [0..1]
 
