@@ -10,13 +10,13 @@ if TYPE_CHECKING:
     from sim.world import World
 
 class Vortex:
-    def __init__(self) -> None:
+    def __init__(self, config: dict) -> None:
         self.uv_pos = np.array([0.0, 0.0, 0.0])
         d = np.array([np.random.normal(), np.random.normal(), 0.0])
         self.uv_dir = d / np.linalg.norm(d)
         self.evolve_ratio = 0.1
         self.uv_speed = 0.0001
-        self.attraction = 0.01
+        self.attraction = config["atmosphere"]["vortex_attraction"]
 
     def random_pos(self):
         self.uv_pos = np.array([np.random.uniform(), np.random.uniform(), 0.0])

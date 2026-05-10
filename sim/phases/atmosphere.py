@@ -60,15 +60,14 @@ def step(world: "World") -> None:
         ).astype(np.float32)
         wind_toward.append(component)
 
-    total_wind = np.minimum(
-        np.sum(wind_toward, axis=0).astype(np.float32), 1.0
-    ).astype(np.float32)
+    total_wind_raw = np.sum(wind_toward, axis=0).astype(np.float32)
+    total_wind     = np.minimum(total_wind_raw, 1.0).astype(np.float32)
 
     fractions = []
     for wc in wind_toward:
         fractions.append(
-            np.where(total_wind > 0.0,
-                     wc / (total_wind + 1e-8),
+            np.where(total_wind_raw > 0.0,
+                     wc / (total_wind_raw + 1e-8),
                      0.0).astype(np.float32)
         )
 

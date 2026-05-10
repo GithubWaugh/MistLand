@@ -52,7 +52,7 @@ class World:
         self._wind_noise_wx: np.ndarray | None = None
         self._wind_noise_wy: np.ndarray | None = None
 
-        self.vortex = np.array([Vortex() for _ in range(self.config["atmosphere"]["vortex_number"])])
+        self.vortex = np.array([Vortex(self.config) for _ in range(self.config["atmosphere"]["vortex_number"])])
 
     def swap_buffers(self) -> None:
         self.front, self.back = self.back, self.front

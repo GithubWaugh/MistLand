@@ -115,13 +115,16 @@ def step(world: "World") -> None:
 
     for vtx in world.vortex:
         vx, vy, _ = vtx.world_pos(world)
-        dx = grid_x - vx
-        dy = grid_y - vy
-        dist = np.maximum(np.sqrt(dx**2 + dy**2), 1e-6)
+        dx = (grid_x - vx + world.width  * 0.5) % world.width  - world.width  * 0.5
+        dy = (grid_y - vy + world.height * 0.5) % world.height - world.height * 0.5
+        dist    = np.maximum(np.sqrt(dx**2 + dy**2), 1e-6)
+        max_dist = 0.5 * min(world.width, world.height)
+        falloff  = np.maximum(np.cos(np.pi * 0.5 * dist / max_dist), 0.0)
         # cross (dx/dist, dy/dist, 0) × (0,0,1) = (dy/dist, -dx/dist)
-        new_wx += (dy / dist) * vtx.attraction
-        new_wy += (-dx / dist) * vtx.attraction
+        new_wx += (dy / dist) * vtx.attraction * falloff
+        new_wy += (-dx / dist) * vtx.attraction * falloff
 
+    # Evolve vortices direction for next tick
     for vtx in world.vortex:
         vtx.evolve()
 

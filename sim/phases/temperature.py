@@ -103,11 +103,9 @@ def step(world: "World") -> None:
     artificial_boost = 1.0  # Boost factor to make the sun's effect more visible in the simulation 
     sun_factor *= solar_input * artificial_boost * (1-albedo)  # Higher solar input has a stronger effect, but is modulated by albedo (reflectivity). Bare ground absorbs more energy, while snow-covered areas reflect most of it.
 
-    """
     # Felt temperature includes mist cooling effect
     mist_cooling_factor = atmos_cfg.get("mist_cooling_factor", 0.0)
-    f.atmo_temp -= mist_cooling_factor * world.front.mist
-    """
+    sun_factor -= mist_cooling_factor * world.front.mist.astype(np.float32)/7  # Mist cools the atmosphere by absorbing heat, proportional to mist density and cooling factor
 
     # --- Update Temperature ---
     b.ground_temp = (f.ground_temp + net_neighbour - net_flux).astype(np.float32)
