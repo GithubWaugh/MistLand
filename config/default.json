@@ -9,7 +9,7 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
-    "seed": 3141592657,
+    "seed": 246810,
      "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
     "grid_width": 512,
     "grid_height": 256,
@@ -64,6 +64,8 @@
 
   "atmosphere": {
     "_comment": "Controls pressure computation and wind-driven transport.",
+    "vortex_number": 1,
+    "_comment_vortex_number": "Number of vortices in the world. Each vortex adds a rotational component to the wind, creating more dynamic and less uniform wind patterns.",
     "P_base": 1.0,
     "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
     "k_temp": 0.01,
@@ -86,9 +88,9 @@
     "wind_viscosity": 0.25,
     "wind_damping": 0.95,
     "wind_max_speed": 5.0,
-    "wind_noise_strength": 0.01,
+    "wind_noise_strength": 0.005,
     "_comment_wind_noise_strength": "Amplitude of the noise perturbation added to wind each tick.",
-    "wind_noise_coarse_factor": 32,
+    "wind_noise_coarse_factor": 8,
     "_comment_wind_noise_coarse_factor": "Downscale factor for the coarse noise grid (W/factor × H/factor). Higher = larger, smoother eddies.",
     "wind_noise_persistence": 0.99,
     "_comment_wind_noise_persistence": "O-U persistence per tick [0..1]. 0.99 = significant change every ~100 ticks; 0.9 = every ~10 ticks.",

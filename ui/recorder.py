@@ -25,7 +25,7 @@ class VideoRecorder:
         self.frame_step = int(out.get("frame_step", 1))
         self._quality   = _QUALITY_MAP.get(str(out.get("quality", "high")), 9)
         self._frames: list[np.ndarray] = []
-        self.paused     = False
+        self.paused     = True
 
     def toggle_pause(self) -> None:
         self.paused = not self.paused

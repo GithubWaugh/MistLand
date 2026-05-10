@@ -431,6 +431,12 @@ def _spectral(value: float) -> tuple:
 
 
 def _draw_wind_streamers(surface, world, cam_x, cam_y, zoom, vw, vh):
+    """ Draw vortices as blue circles, then wind streamers with color based on speed and orientation based on direction."""
+    for vtx in world.vortex:
+        vx, vy, _ = vtx.world_pos(world)
+        scx = int((vx - cam_x + 0.5) * zoom)
+        scy = int((vy - cam_y + 0.5) * zoom)
+        pygame.draw.circle(surface, (0, 0, 139), (scx, scy), 3)
     """Streamers orientés + pointe de flèche indiquant le sens."""
     if zoom < 3:
         return
@@ -481,6 +487,7 @@ def _draw_wind_streamers(surface, world, cam_x, cam_y, zoom, vw, vh):
             ay2 = y_tip - int(vy * arrow_len * 0.7) - int(py_p * arrow_len * 0.4)
             pygame.draw.line(surface, col, (x_tip, y_tip), (ax1, ay1), 1)
             pygame.draw.line(surface, col, (x_tip, y_tip), (ax2, ay2), 1)
+
 
 
 # ---------------------------------------------------------------------------

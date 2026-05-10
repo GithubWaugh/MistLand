@@ -79,7 +79,6 @@ def step(world: "World") -> None:
     lap_y = (np.roll(wy,  1, axis=0) + np.roll(wy, -1, axis=0) +
              np.roll(wy,  1, axis=1) + np.roll(wy, -1, axis=1) - 4.0 * wy)
 
- 
 
     # --- 4. Update with damping ---
     new_wx = (wx - k_wind * dPdx + adv_str * adv_x + viscosity * lap_x) * damping
@@ -109,7 +108,25 @@ def step(world: "World") -> None:
     new_wx += np.asarray(_zoom(world._wind_noise_wx, zoom_factor, order=1), dtype=np.float32) * noise_strength
     new_wy += np.asarray(_zoom(world._wind_noise_wy, zoom_factor, order=1), dtype=np.float32) * noise_strength
 
-    # --- 5. Speed clamp ---
+    # --- 5 --- Vortex
+    ys = np.arange(world.height, dtype=np.float32)
+    xs = np.arange(world.width,  dtype=np.float32)
+    grid_x, grid_y = np.meshgrid(xs, ys)
+
+    for vtx in world.vortex:
+        vx, vy, _ = vtx.world_pos(world)
+        dx = grid_x - vx
+        dy = grid_y - vy
+        dist = np.maximum(np.sqrt(dx**2 + dy**2), 1e-6)
+        # cross (dx/dist, dy/dist, 0) × (0,0,1) = (dy/dist, -dx/dist)
+        new_wx += (dy / dist) * vtx.attraction
+        new_wy += (-dx / dist) * vtx.attraction
+
+    for vtx in world.vortex:
+        vtx.evolve()
+
+
+    # --- 6. Speed clamp ---
     speed = np.sqrt(new_wx ** 2 + new_wy ** 2)
     scale = np.where(speed > max_speed, max_speed / (speed + 1e-8), 1.0).astype(np.float32)
 

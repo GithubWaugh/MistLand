@@ -5,6 +5,7 @@ Defines the World class.
 
 import numpy as np
 from sim.buffers import WorldBuffers
+from sim.phases.vortex import Vortex
 
 VEG_NONE    = 0
 VEG_LICHENS = 1
@@ -50,6 +51,8 @@ class World:
         # Initialized to None; wind.py allocates them on first tick.
         self._wind_noise_wx: np.ndarray | None = None
         self._wind_noise_wy: np.ndarray | None = None
+
+        self.vortex = np.array([Vortex() for _ in range(self.config["atmosphere"]["vortex_number"])])
 
     def swap_buffers(self) -> None:
         self.front, self.back = self.back, self.front
@@ -106,6 +109,9 @@ class World:
         
 
         self.tick_count += 1
+
+        for vortex in self.vortex:
+            vortex.evolve()
 
         # NaN guard
         for name, arr in [

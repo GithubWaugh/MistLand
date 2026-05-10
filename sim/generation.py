@@ -10,6 +10,7 @@ from scipy.ndimage import gaussian_filter
 
 from sim import world
 from sim.world import World, BASE_BARE, BASE_SAND, BASE_SOIL
+#from sim.phases.vortex import Vortex
 
 
 OCTAVES = [
@@ -40,6 +41,8 @@ def generate(world: World, seed: int = 42) -> None:
     _update_albedo(world)
     _init_wind(world)   # must be last — uses pressure computed in _distribute_temperature
     world.initial_energy = world.total_energy()
+    for vtx in world.vortex:
+        vtx.random_pos()
 
 
 # ------------------------------------------------------------------
