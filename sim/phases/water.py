@@ -104,6 +104,11 @@ def step(world: "World") -> None:
 
         water_to_neighbour = (outflow * fraction).astype(np.float32)
         new_ground_water  += np.roll(np.roll(water_to_neighbour, -dr, axis=0), -dc, axis=1)
+
+    # Erode terrain under water flow : 0.1% of outflow volume, capped to 0.01 altitude units per tick
+    erosion_rate = cfg.get("erosion_rate", 0.001)
+    erosion = np.minimum(outflow * erosion_rate, 0.01).astype(np.float32)
+    world.altitude = np.maximum(world.altitude - erosion, 0.0).astype(np.float32)
     
     # Clamp : no negative water quantity
     new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
@@ -157,13 +162,6 @@ def step(world: "World") -> None:
         new_ground_water += np.roll(np.roll(diffuse_per_neighbour, -dr, axis=0), -dc, axis=1)
 
     new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
-
-    # --- Force conservation (float32 rounding correction) ---
-    water_before = f.ground_water.sum()
-    water_after  = new_ground_water.sum()
-    error        = water_before - water_after
-    if abs(error) > 1e-6:
-        new_ground_water += error / (world.height * world.width)
     """
 
     # Frozen grounds (tundra) : ground water turns to snow, ground water set to zero
@@ -179,6 +177,11 @@ def step(world: "World") -> None:
         if abs(water_delta) > 10 and lake_count > 0:
             correction = -water_delta / lake_count
             new_ground_water = np.where(is_lake, new_ground_water + correction, new_ground_water).astype(np.float32)
+
+    # Apply a blur to smooth out the water surface of flooded cells (lakes)
+    from scipy.ndimage import gaussian_filter
+    blurred_water = gaussian_filter(new_ground_water, sigma=0.25, radius=1, mode='nearest')
+    new_ground_water = np.where(is_lake, blurred_water, new_ground_water).astype(np.float32)
 
     # --- Apply to back buffer ---
     b.ground_water = new_ground_water
