@@ -49,3 +49,7 @@ def step(world: "World") -> None:
     # Apply
     b.ground_water = (f.ground_water + water_gained).astype(np.float32)
     b.mist         = np.clip(f.mist - mist_loss, 0.0, 7.0).astype(np.float32)
+
+    # Rain slighty bends temperature toward 10°C (latent heat release), more so in colder cells
+    rain_cooling = np.where(is_raining, 0.02 * (10.0 - f.atmo_temp) * (mist_loss / (rain_rate * humidity_threshold + 1e-6)), 0.0)
+    b.atmo_temp = (f.atmo_temp + rain_cooling).astype(np.float32)

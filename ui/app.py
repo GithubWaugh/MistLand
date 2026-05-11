@@ -152,6 +152,10 @@ def _build_hillshade(altitude, snow: np.ndarray) -> np.ndarray:
     inv_sqrt3 = 1.0 / math.sqrt(3.0)
     shade = nx * (-inv_sqrt3) + ny * (-inv_sqrt3) + nz * inv_sqrt3
 
+    # Snow effect : brighten areas with snow to make them visually distinct and more visible, especially when the base color is light (e.g., sand or bare)
+    # shade = np.where(snow >= 0.01, shade + 0.25, shade)
+    shade += snow * 0.25  # Additive brighten based on snow amount, more snow → brighter, without a hard threshold
+
     # Normalisation : étire les valeurs réelles pour couvrir toute la plage
     s_min, s_max = shade.min(), shade.max()
     if s_max - s_min > 1e-6:
@@ -306,11 +310,12 @@ def _build_mist_surface(world, vw, vh, cx, cy, zoom):
 
 # (couleur RGB, alpha [0-255], densité relative)
 _VEG_POINT_STYLE = {
-    VEG_LICHENS: (COLOR_L2_LICHEN, 128, 0.15),   # épars, semi-transparent
-    VEG_GRASS  : (COLOR_L2_GRASS,  128, 0.30),
-    VEG_SHRUBS : (COLOR_L2_SHRUB,  200, 0.55),
+    VEG_LICHENS: (COLOR_L2_LICHEN, 128, 0.15),   # 0.15 épars, semi-transparent
+    VEG_GRASS  : (COLOR_L2_GRASS,  128, 0.30),   # 0.30 plus dense, semi-transparent
+    VEG_SHRUBS : (COLOR_L2_SHRUB,  200, 0.55),   # 0.55 encore plus dense, plus opaque
     VEG_TREES  : (COLOR_L2_TREE,   255, 0.80),   # dense, opaque
 }
+
 
 def _draw_l2_veg(surface, world, cam_x, cam_y, zoom, vw, vh, is_flooded):
     veg = world.front.vegetation
@@ -320,6 +325,8 @@ def _draw_l2_veg(surface, world, cam_x, cam_y, zoom, vw, vh, is_flooded):
     h_crop = y1 - y0; w_crop = x1 - x0
     if h_crop <= 0 or w_crop <= 0:
         return
+    
+    color_variation = 25  # variation de couleur aléatoire pour éviter l'effet de motif répétitif
 
     if zoom < 4:
         # Faible zoom : teinte chaque cellule avec la couleur de végétation
@@ -331,9 +338,12 @@ def _draw_l2_veg(surface, world, cam_x, cam_y, zoom, vw, vh, is_flooded):
         surf.fill((0, 0, 0, 0))
         px3d = pygame.surfarray.pixels3d(surf)   # (w_crop, h_crop, 3) — axe x en premier
         pa   = pygame.surfarray.pixels_alpha(surf)
+        rng_var = np.random.default_rng(int(y0 * world.width + x0))
+        var_wh  = rng_var.integers(-color_variation, color_variation + 1, size=(w_crop, h_crop, 3), dtype=np.int16)
         for lv, (col, alpha, _) in _VEG_POINT_STYLE.items():
-            mask = (crop_veg == lv).T    # transposé pour surfarray [x, y]
-            px3d[mask] = col
+            mask   = (crop_veg == lv).T
+            varied = np.clip(np.array(col, dtype=np.int16) + var_wh, 0, 255).astype(np.uint8)
+            px3d[mask] = varied[mask]
             pa[mask]   = alpha
         del px3d, pa
         scaled = pygame.transform.scale(surf, ((x1 - x0) * zoom, (y1 - y0) * zoom))
@@ -341,25 +351,26 @@ def _draw_l2_veg(surface, world, cam_x, cam_y, zoom, vw, vh, is_flooded):
 
     else:
         # Zoom élevé : points distribués dans chaque cellule
-        rng = np.random.default_rng(42)   # graine fixe → pas de scintillement
         for gy in range(y0, y1):
             for gx in range(x0, x1):
                 cy_w = gy % world.height
                 cx_w = gx % world.width
                 lv   = int(veg[cy_w, cx_w])
-                if lv == VEG_NONE:
-                    continue
-                if is_flooded[cy_w, cx_w] :
+                if lv == VEG_NONE or is_flooded[cy_w, cx_w]:
                     continue
                 col, _, density = _VEG_POINT_STYLE[lv]
                 n_dots = max(1, int(density * zoom * zoom * 0.5))
                 scx = int((gx - cam_x) * zoom)
                 scy = int((gy - cam_y) * zoom)
-                rng = np.random.default_rng(cy_w * world.width + cx_w)
+                cell_seed = cy_w * world.width + cx_w
+                rng_col   = np.random.default_rng(cell_seed + 999983)
+                variation = rng_col.integers(-color_variation, color_variation + 1, size=3, dtype=np.int16)
+                varied_col = tuple(np.clip(np.array(col, dtype=np.int16) + variation, 0, 255).tolist())
+                rng = np.random.default_rng(cell_seed)
                 for _ in range(n_dots):
                     px = scx + int(rng.integers(0, zoom))
                     py = scy + int(rng.integers(0, zoom))
-                    pygame.draw.circle(surface, col, (px, py), 1)
+                    pygame.draw.circle(surface, varied_col, (px, py), 1)
 
 
 # ---------------------------------------------------------------------------

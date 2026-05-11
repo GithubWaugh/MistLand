@@ -118,7 +118,7 @@ def step(world: "World") -> None:
         dx = (grid_x - vx + world.width  * 0.5) % world.width  - world.width  * 0.5
         dy = (grid_y - vy + world.height * 0.5) % world.height - world.height * 0.5
         dist     = np.maximum(np.sqrt(dx**2 + dy**2), 1e-6)
-        max_dist = min(world.width, world.height)
+        max_dist = min(world.width, world.height) / 2.0
         eye_radius = max_dist * cfg.get("vortex_eye_ratio", 0.15)
         t          = np.minimum(dist / eye_radius, 1.0)
         eye_factor = t * t * (3.0 - 2.0 * t)

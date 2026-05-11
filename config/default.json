@@ -9,11 +9,11 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
-    "seed": 54321,
+    "seed": 12345,
      "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
     "grid_width": 512,
     "grid_height": 256,
-    "total_water": 2,
+    "total_water": 5,
     "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
     "total_energy": 50000,
     "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation).",
@@ -64,11 +64,11 @@
 
   "atmosphere": {
     "_comment": "Controls pressure computation and wind-driven transport.",
-    "vortex_number": 1,
+    "vortex_number": 3,
     "_comment_vortex_number": "Number of vortices in the world. Each vortex adds a rotational component to the wind, creating more dynamic and less uniform wind patterns.",
-    "vortex_pull": 0.15,
+    "vortex_pull": 0.05,
     "_comment_vortex_pull": "Strength of the vortex's influence on the wind. Higher = stronger winds around the vortex center, creating more pronounced cyclones and anticyclones.",
-    "vortex_spin": 0.2,
+    "vortex_spin": 0.1,
     "_comment_vortex_spin": "Amount of rotational (tangential) velocity added to the wind around the vortex center. Higher = more swirling, less linear winds.",
     "vortex_eye_ratio": 0.5,
     "_comment_vortex_eye_ratio": "Size of the vortex eye as a fraction of the maximum vortex influence radius. Higher = larger calm center with less wind, smaller = more intense winds closer to the center.",
