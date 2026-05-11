@@ -108,6 +108,7 @@ def step(world: "World") -> None:
     # Erode terrain under water flow : 0.1% of outflow volume, capped to 0.01 altitude units per tick
     erosion_rate = cfg.get("erosion_rate", 0.001)
     erosion = np.minimum(outflow * erosion_rate, 0.01).astype(np.float32)
+    erosion /= world.front.vegetation + 1 # Vegetation reduces erosion by absorbing some of the water's energy
     world.altitude = np.maximum(world.altitude - erosion, 0.0).astype(np.float32)
     
     # Clamp : no negative water quantity

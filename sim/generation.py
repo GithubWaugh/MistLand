@@ -41,8 +41,11 @@ def generate(world: World, seed: int = 42) -> None:
     _update_albedo(world)
     _init_wind(world)   # must be last — uses pressure computed in _distribute_temperature
     world.initial_energy = world.total_energy()
-    for vtx in world.vortex:
-        vtx.random_pos()
+    if len(world.vortex) == 1:
+        world.vortex[0].uv_pos = np.array([0.5, 0.5, 0.0])
+    else:
+        for vtx in world.vortex:
+            vtx.random_pos()
 
 
 # ------------------------------------------------------------------

@@ -550,10 +550,10 @@ def _draw_rain_overlay(surface, world, cam_x, cam_y, zoom, vw, vh):
         px0 = int((x0 + col - cam_x) * zoom)
         py0 = int((y0 + row - cam_y) * zoom)
         for _ in range(n):
-            pygame.draw.circle(surface, COLOR_RAIN,
-                               (px0 + np.random.randint(0, max(1, zoom)),
-                                py0 + np.random.randint(0, max(1, zoom))), 1)
-
+            x = px0 + np.random.randint(0, max(1, zoom))
+            y = py0 + np.random.randint(0, max(1, zoom))
+            if 0 <= x < surface.get_width() and 0 <= y < surface.get_height():
+                surface.set_at((x, y), COLOR_RAIN)
 
 # ---------------------------------------------------------------------------
 # Panneau d'inspection
