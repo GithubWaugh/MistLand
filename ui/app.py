@@ -121,7 +121,7 @@ class RendererState:
     cam_y       : float = 0.0
     layer1_mode : int   = L1_SOIL
     layer2_mode : int   = L2_VEG
-    layer3_mode : int   = L3_NONE
+    layer3_mode : int   = L3_GRDW
     show_wind   : bool  = False
     show_rain   : bool  = False
     show_mist   : bool  = True
@@ -422,7 +422,7 @@ def _l3_pressure_rgb(world) -> np.ndarray:
 def _l3_ground_water_rgb(world) -> np.ndarray:
     flooded = _compute_flooded(world)
     gw = world.front.ground_water * ~flooded
-    return _lerp_colour((0, 0, 0), (255, 255, 255),
+    return _lerp_colour((0, 0, 255), (80, 80, 255),
                         np.clip(gw, 0.0, 1.0).astype(np.float32))
 
 def _draw_l3_temp(surface, world, cam_x, cam_y, zoom, vw, vh):
@@ -670,13 +670,22 @@ class Renderer:
         # L2_SEDIMENTS : non encore implémenté
 
         # --- L3 : données atmosphère additifs ---
-        if s.layer3_mode == L3_GRDW :
-            l3_rgb = _l3_ground_water_rgb(world)
-            l3_surf, ox, oy = _crop_and_scale(l3_rgb, s.cam_x, s.cam_y,
-                                             s.zoom, vw, vh, ww, wh)
-            if l3_surf:
-                l3_surf.set_alpha(128)   # semi-transparent
-                screen.blit(l3_surf, (ox, oy))
+        if s.layer3_mode == L3_GRDW:
+            x0, y0 = int(s.cam_x), int(s.cam_y)
+            x1 = min(x0 + (-(-vw // s.zoom) + 1), ww)
+            y1 = min(y0 + (-(-vh // s.zoom) + 1), wh)
+            flooded = _compute_flooded(world)
+            alpha = np.clip(world.front.ground_water * ~flooded * 255, 0, 255).astype(np.uint8)
+            tile = alpha[y0:y1, x0:x1]
+            surf = pygame.Surface((tile.shape[1], tile.shape[0]), pygame.SRCALPHA)
+            surf.fill((40, 100, 200, 0))
+            alpha_arr = pygame.surfarray.pixels_alpha(surf)
+            alpha_arr[:, :] = tile.T
+            del alpha_arr
+            scaled = pygame.transform.scale(surf, ((x1 - x0) * s.zoom, (y1 - y0) * s.zoom))
+            ox = -int((s.cam_x - x0) * s.zoom)
+            oy = -int((s.cam_y - y0) * s.zoom)
+            screen.blit(scaled, (ox, oy))
         elif s.layer3_mode in _L3_BUILDERS:
             l3_rgb = _L3_BUILDERS[s.layer3_mode](world)
             l3_surf, ox, oy = _crop_and_scale(l3_rgb, s.cam_x, s.cam_y,

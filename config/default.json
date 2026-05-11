@@ -13,7 +13,7 @@
      "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
     "grid_width": 256,
     "grid_height": 128,
-    "total_water": 1.1,
+    "total_water": 1.5,
     "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
     "total_energy": 50000,
     "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation).",
@@ -142,7 +142,7 @@
     "_comment_mist_to_snow_rate": "Fraction of mist converted to snow per tick when temperature is below threshold.",
     "snow_melting_threshold": 1.0,
     "_comment_snow_to_water_threshold": "Atmospheric temperature (°C) above which snow starts melting. Higher = snow lasts longer.",
-    "snow_melting_rate": 0.1,
+    "snow_melting_rate": 0.25,
     "_comment_snow_melting_rate": "Fraction of ground snow converted to ground water per tick when above melt threshold."
   },
 
