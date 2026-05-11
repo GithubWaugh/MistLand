@@ -9,11 +9,11 @@
 
   "world": {
     "_comment": "Global world parameters. Conserved quantities (water, energy) are distributed at generation and should remain constant.",
-    "seed": 246810,
+    "seed": 54321,
      "_comment_seed": "Random seed for world generation. Change to get a different world layout.",
-    "grid_width": 512,
-    "grid_height": 256,
-    "total_water": 1.5,
+    "grid_width": 256,
+    "grid_height": 128,
+    "total_water": 1.1,
     "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
     "total_energy": 50000,
     "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation).",
@@ -58,15 +58,15 @@
     "_comment_ground_to_neighbour_rate": "Fraction of ground temperature radiated to each of the 8 neighbours per tick. Modulated by thermal_inertia.",
     "ground_to_atmosphere_rate": 0.01,
     "_comment_ground_to_atmosphere_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with atmosphere_to_ground_rate).",
-    "atmosphere_to_ground_rate": 0.01,
+    "atmosphere_to_ground_rate": 0.05,
     "_comment_atmosphere_to_ground_rate": "Used to compute the net ground<->atmosphere exchange rate (averaged with ground_to_atmosphere_rate)."
   },
 
   "atmosphere": {
     "_comment": "Controls pressure computation and wind-driven transport.",
-    "vortex_number": 2,
+    "vortex_number": 1,
     "_comment_vortex_number": "Number of vortices in the world. Each vortex adds a rotational component to the wind, creating more dynamic and less uniform wind patterns.",
-    "vortex_attraction": 0.1,
+    "vortex_attraction": 0.15,
     "_comment_vortex_attraction": "Strength of the vortex's influence on the wind.",
     "P_base": 1.0,
     "_comment_P_base": "Baseline atmospheric pressure (bar). Pressure deviates from this value based on temperature and altitude.",
@@ -80,7 +80,7 @@
     "_comment_k_wind": "Wind strength coefficient. wind(A→B) = k_wind * (pressure(A) - pressure(B)). Higher = stronger winds.",
     "pressure_damping": 0.05,
     "_comment_pressure_damping": "How fast pressure converges toward its target each tick. 1.0 = instant, 0.1 = slow drift (more stable).",
-    "wind_transport_rate": 0.075,
+    "wind_transport_rate": 0.05,
     "_comment_wind_transport_rate": "Fraction of atmospheric content (mist, temperature) transported by wind per tick.",
     "mist_diffusion_rate": 0.01,
     "mist_advection_rate": 1,

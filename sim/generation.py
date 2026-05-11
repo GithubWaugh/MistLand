@@ -14,7 +14,7 @@ from sim.world import World, BASE_BARE, BASE_SAND, BASE_SOIL
 
 
 OCTAVES = [
-    (1.000,  2),
+    (2.000,  2),
     (0.600,  4),
     (0.400,  8),
     (0.250, 16),

@@ -13,7 +13,7 @@ Layer stack (bottom → top) :
   Inspect panel
 
 Contrôles :
-  [1] cycle L1   [2] cycle L2   [3] wind   [4] rain   [M] mist
+  [1] cycle L1   [2] cycle L2   [3] cycle L3   [4] wind [5] rain   [M] mist
   [I] inspect    [A] pause      [SPC] step
   [PgUp/Dn] speed    [scroll] zoom    [RMB/MMB] pan
 """
@@ -47,6 +47,8 @@ COLOR_L2_TREE   = ( 30,  90,  40)   # vert foncé
 COLOR_L2_NUTR   = (160, 120,  50)   # ocre
 
 MIST_ALPHA_MAX    = 200
+TEMP_ALPHA_MAX    = 180
+PRES_ALPHA_MAX    = 180
 WINDOW_W          = 1024
 WINDOW_H          = 512
 INFO_BAR_H        = 24
@@ -64,18 +66,10 @@ SPEED_DEFAULT = 6
 # ---------------------------------------------------------------------------
 L1_NONE         = 0
 L1_SOIL         = 1
-L1_TEMP         = 2
-L1_PRESSURE     = 3
-L1_GROUND_WATER = 4
-L1_BLANK        = 6
-L1_MODES = [L1_NONE, L1_SOIL, L1_TEMP, L1_PRESSURE, L1_GROUND_WATER,L1_BLANK]
+L1_MODES = [L1_NONE, L1_SOIL]
 L1_NAMES = {
     L1_NONE        : "---",
     L1_SOIL        : "soil",
-    L1_TEMP        : "temp",
-    L1_PRESSURE    : "pressure",
-    L1_GROUND_WATER: "gnd-water",
-    L1_BLANK       : "blank",
 }
 
 # ---------------------------------------------------------------------------
@@ -97,6 +91,25 @@ VEG_NAMES  = {VEG_NONE: "None", VEG_LICHENS: "Lichens",
                VEG_GRASS: "Grass", VEG_SHRUBS: "Shrubs", VEG_TREES: "Trees"}
 BASE_NAMES = {BASE_BARE: "Bare", BASE_SAND: "Sand", BASE_SOIL: "Soil"}
 
+# ---------------------------------------------------------------------------
+# Layer 3 — éléments atmosphère additifs
+# ---------------------------------------------------------------------------
+L3_NONE         = 0
+L3_TEMP         = 1
+L3_PRES         = 2
+L3_GRDW         = 3
+L3_MODES = [L3_NONE, L3_TEMP, L3_PRES, L3_GRDW]
+L3_NAMES = {
+    L3_NONE    : "---",
+    L3_TEMP    : "temperature",
+    L3_PRES    : "pressure",
+    L3_GRDW    : "ground-water",
+}
+
+# ---------------------------------------------------------------------------
+# Layer 4 — Additif : Vent et Pluie (toggle indépendants)
+# ---------------------------------------------------------------------------
+
 
 # ---------------------------------------------------------------------------
 # Renderer state
@@ -107,7 +120,8 @@ class RendererState:
     cam_x       : float = 0.0
     cam_y       : float = 0.0
     layer1_mode : int   = L1_SOIL
-    layer2_mode : int   = L2_NONE
+    layer2_mode : int   = L2_VEG
+    layer3_mode : int   = L3_NONE
     show_wind   : bool  = False
     show_rain   : bool  = False
     show_mist   : bool  = True
@@ -257,26 +271,10 @@ def _l1_soil_rgb(world) -> np.ndarray:
     rgb[world.front.ground_snow >= 0.01] = COLOR_SNOW
     return rgb
 
-def _l1_temp_rgb(world) -> np.ndarray:
-    return _lerp_colour((50, 80, 200), (220, 60, 30), _normalise(world.front.ground_temp))
+_L1_BUILDERS = {    
+    L1_NONE: lambda w: np.zeros((w.height, w.width, 3), dtype=np.uint8),
+    L1_SOIL: _l1_soil_rgb, }
 
-def _l1_pressure_rgb(world) -> np.ndarray:
-    return _lerp_colour((80, 20, 120), (240, 200, 30), _normalise(world.front.pressure))
-
-def _l1_ground_water_rgb(world) -> np.ndarray:
-    return _lerp_colour((140, 90, 40), (30, 100, 220),
-                        np.clip(world.front.ground_water, 0.0, 1.0).astype(np.float32))
-
-def _l1_blank_rgb(world) -> np.ndarray:
-    return np.full((world.height, world.width, 3), 128, dtype=np.uint8)
-
-_L1_BUILDERS = {
-    L1_SOIL        : _l1_soil_rgb,
-    L1_TEMP        : _l1_temp_rgb,
-    L1_PRESSURE    : _l1_pressure_rgb,
-    L1_GROUND_WATER: _l1_ground_water_rgb,
-    L1_BLANK         : _l1_blank_rgb,
-}
 
 
 # ---------------------------------------------------------------------------
@@ -411,9 +409,45 @@ def _draw_l2_nutrients(surface, world, cam_x, cam_y, zoom, vw, vh, is_flooded):
                     py = scy + int(rng.integers(0, zoom))
                     pygame.draw.circle(surface, COLOR_L2_NUTR, (px, py), 1)
 
+# ---------------------------------------------------------------------------
+# L3 — Données atmosphère additifs (teinte RGB)
+# ---------------------------------------------------------------------------
+
+def _l3_temp_rgb(world) -> np.ndarray:
+    return _lerp_colour((50, 80, 200), (220, 60, 30), _normalise(world.front.ground_temp))
+
+def _l3_pressure_rgb(world) -> np.ndarray:
+    return _lerp_colour((80, 20, 120), (240, 200, 30), _normalise(world.front.pressure))
+
+def _l3_ground_water_rgb(world) -> np.ndarray:
+    flooded = _compute_flooded(world)
+    gw = world.front.ground_water * ~flooded
+    return _lerp_colour((0, 0, 0), (255, 255, 255),
+                        np.clip(gw, 0.0, 1.0).astype(np.float32))
+
+def _draw_l3_temp(surface, world, cam_x, cam_y, zoom, vw, vh):
+    rgb = _l3_temp_rgb(world)
+    l3_surf, ox, oy = _crop_and_scale(rgb, cam_x, cam_y, zoom, vw, vh, world.width, world.height)
+    if l3_surf:
+        l3_surf.set_alpha(TEMP_ALPHA_MAX)
+        surface.blit(l3_surf, (ox, oy))
+
+def _draw_l3_pressure(surface, world, cam_x, cam_y, zoom, vw, vh):
+    rgb = _l3_pressure_rgb(world)
+    l3_surf, ox, oy = _crop_and_scale(rgb, cam_x, cam_y, zoom, vw, vh, world.width, world.height)
+    if l3_surf:
+        l3_surf.set_alpha(PRES_ALPHA_MAX)
+        surface.blit(l3_surf, (ox, oy))
+
+
+_L3_BUILDERS = {
+    L3_TEMP    : _l3_temp_rgb,
+    L3_PRES    : _l3_pressure_rgb,
+    L3_GRDW    : _l3_ground_water_rgb,
+}
 
 # ---------------------------------------------------------------------------
-# L3a — Streamers de vent + flèche de sens
+# L4a — Streamers de vent + flèche de sens
 # ---------------------------------------------------------------------------
 
 def _spectral(value: float) -> tuple:
@@ -491,7 +525,7 @@ def _draw_wind_streamers(surface, world, cam_x, cam_y, zoom, vw, vh):
 
 
 # ---------------------------------------------------------------------------
-# L3b — Pluie
+# L4b — Pluie
 # ---------------------------------------------------------------------------
 
 def _draw_rain_overlay(surface, world, cam_x, cam_y, zoom, vw, vh):
@@ -617,8 +651,6 @@ class Renderer:
         # --- Couche de base : hillshade + compositing L1 optionnel ---
         if s.layer1_mode == L1_NONE:
             base_rgb = _hillshade_to_rgb(self._hillshade_L)
-        elif s.layer1_mode == L1_BLANK:
-            base_rgb = np.full((world.height, world.width, 3), 30, dtype=np.uint8)
         else:
             l1_rgb   = _L1_BUILDERS[s.layer1_mode](world)
             base_rgb = _composite_hsl(self._hillshade_L, l1_rgb)
@@ -636,6 +668,22 @@ class Renderer:
         elif s.layer2_mode == L2_NUTRIENTS:
             _draw_l2_nutrients(screen, world, s.cam_x, s.cam_y, s.zoom, vw, vh, is_flooded)
         # L2_SEDIMENTS : non encore implémenté
+
+        # --- L3 : données atmosphère additifs ---
+        if s.layer3_mode == L3_GRDW :
+            l3_rgb = _l3_ground_water_rgb(world)
+            l3_surf, ox, oy = _crop_and_scale(l3_rgb, s.cam_x, s.cam_y,
+                                             s.zoom, vw, vh, ww, wh)
+            if l3_surf:
+                l3_surf.set_alpha(128)   # semi-transparent
+                screen.blit(l3_surf, (ox, oy))
+        elif s.layer3_mode in _L3_BUILDERS:
+            l3_rgb = _L3_BUILDERS[s.layer3_mode](world)
+            l3_surf, ox, oy = _crop_and_scale(l3_rgb, s.cam_x, s.cam_y,
+                                             s.zoom, vw, vh, ww, wh)
+            if l3_surf:
+                l3_surf.set_alpha(128)   # semi-transparent
+                screen.blit(l3_surf, (ox, oy))
 
         # --- Voile de brume ---
         if s.show_mist:
@@ -661,7 +709,7 @@ class Renderer:
         # --- Barre de statut ---
         pygame.draw.rect(screen, (20, 20, 20), (0, sh - INFO_BAR_H, sw, INFO_BAR_H))
         spd  = f"{SPEED_STEPS[s.speed_idx]:.2f}".rstrip('0').rstrip('.') + " t/s"
-        l3st = (("wind" if s.show_wind else "---")
+        l4st = (("wind" if s.show_wind else "---")
                 + "+" + ("rain" if s.show_rain else "---"))
         rec_str = "---" if s.rec_paused else "REC"
         info = (
@@ -669,10 +717,11 @@ class Renderer:
             f"[{'PAUSED' if s.paused else spd}]  |  [{rec_str}]  ||  "
             f"L1:{L1_NAMES[s.layer1_mode]}  "
             f"L2:{L2_NAMES[s.layer2_mode]}  "
-            f"L3:{l3st}  "
+            f"L3:{L3_NAMES[s.layer3_mode]}  "
+            f"L4:{l4st}  |  "
             f"Mist:{'on' if s.show_mist else 'off'}  "
             f"Inspect:{'on' if s.show_inspect else 'off'}  |  "
-            f"[1]L1 [2]L2 [3]wind [4]rain [M]mist [I]inspect  "
+            f"[1]L1 [2]L2 [3]wind [4]rain [5]pressure [M]mist [I]inspect  "
             f"[A]pause [R]rec [SPC]step [PgUp/Dn]speed"
         )
         screen.blit(self._font.render(info, True, (180, 180, 180)),
@@ -702,8 +751,11 @@ class Renderer:
                 idx = (L2_MODES.index(s.layer2_mode) + 1) % len(L2_MODES)
                 s.layer2_mode = L2_MODES[idx]
             elif k == pygame.K_3:
-                s.show_wind = not s.show_wind
+                idx = (L3_MODES.index(s.layer3_mode) + 1) % len(L3_MODES)
+                s.layer3_mode = L3_MODES[idx]
             elif k == pygame.K_4:
+                s.show_wind = not s.show_wind
+            elif k == pygame.K_5:
                 s.show_rain = not s.show_rain
             elif k == pygame.K_m:
                 s.show_mist = not s.show_mist
