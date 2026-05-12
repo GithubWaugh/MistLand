@@ -85,6 +85,30 @@ class World:
         np.maximum(water_overhead, 0.0, out=water_overhead)  # Only count water above the flood threshold
         return water_overhead * water_to_alt + self.altitude
 
+    def sun_exposition(self) -> np.ndarray:
+        sun_dir = self.config["world"].get("sun_direction", [-1.0, 1.0, 1.0])
+        sun_dir = np.array(sun_dir, dtype=np.float32)
+        sun_dir /= np.linalg.norm(sun_dir) + 1e-8  # Normalize and avoid division by zero
+
+        # Compute surface normal using central differences
+        dzdx = np.zeros_like(self.altitude)
+        dzdy = np.zeros_like(self.altitude)
+        dzdx[:, 1:-1] = (self.altitude[:, 2:] - self.altitude[:, :-2]) * 0.5
+        dzdy[1:-1, :] = (self.altitude[2:, :] - self.altitude[:-2, :]) * 0.5
+
+        # Normal vector is (-dzdx, -dzdy, 1), then normalized
+        nx = -dzdx
+        ny = -dzdy
+        nz = np.ones_like(self.altitude)
+        norm = np.sqrt(nx**2 + ny**2 + nz**2) + 1e-8
+        nx /= norm
+        ny /= norm
+        nz /= norm
+
+        # Dot product with sun direction gives exposition (clamped to [0, 1])
+        exposition = nx * sun_dir[0] + ny * sun_dir[1] + nz * sun_dir[2]
+        return np.clip(exposition, 0.0, 1.0)
+
     def tick(self) -> None:
         from sim.phases import (
             temperature, pressure, vegetation, nutriments,

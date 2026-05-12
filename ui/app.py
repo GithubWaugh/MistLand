@@ -828,6 +828,9 @@ class Renderer:
                 self.clamp_camera(screen_size, world)
         elif event.type == pygame.VIDEORESIZE:
             if s.rec_paused:
+                sw, sh = screen_size
+                s.zoom = max(ZOOM_MIN, min(ZOOM_MAX,
+                             int(min(sw / world.width, (sh - INFO_BAR_H) / world.height))))
                 self.clamp_camera(screen_size, world)
             else:
                 s.zoom_locked_until = time.perf_counter() + 3.0

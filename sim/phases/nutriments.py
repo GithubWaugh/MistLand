@@ -75,9 +75,14 @@ def step(world: "World") -> None:
         new_nutriments += np.roll(
             np.roll(units_per_neighbour.astype(np.int16), -dr, axis=0), -dc, axis=1
         )
+    
+    # Banks neighbours of flooded cells receive some free nutriments, to simulate micro-fauna decomposition in lakes. The amount is proportional to the water level (up to 16 units at max water level).
+    for dr, dc in _NEIGHBOURS:
+        new_nutriments += np.roll(
+            np.roll((world.front.ground_water // 32).astype(np.int16), -dr, axis=0), -dc, axis=1
+        ) * (world.front.ground_water > 1)  # Only if there's actually water (not just a flooded cell with 1 unit of water)
 
     # Clamp to [0, 255] (safety); flooded cells (lakes) are capped at 16
     clamped = np.clip(new_nutriments, 0, 255).astype(np.uint8)
     lake_mask = world.get_flooded_mask()
-    clamped[lake_mask] = np.minimum(clamped[lake_mask], cfg["water_max_nutriments"]).astype(np.uint8)
-    b.nutriments = clamped
+    b.nutriments = clamped * ~(world.front.ground_water > 1) 

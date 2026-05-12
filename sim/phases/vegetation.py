@@ -92,12 +92,14 @@ def step(world: "World") -> None:
     ).astype(np.uint16)
 
     # --- Flooding masks ---
+    """
     flood_thresh = np.empty((world.height, world.width), dtype=np.float32)
     flood_thresh[bt == BASE_BARE] = base_cfg["bare"]["flooding_threshold"]
     flood_thresh[bt == BASE_SAND] = base_cfg["sand"]["flooding_threshold"]
     flood_thresh[bt == BASE_SOIL] = base_cfg["soil"]["flooding_threshold"]
+    """
 
-    is_flooded = gw >= flood_thresh
+    is_flooded = world.get_flooded_mask()  # bool array where True means flooded cell
 
     # Cells adjacent to at least one flooded cell
     has_flooded_neighbour = np.zeros((world.height, world.width), dtype=bool)
@@ -238,7 +240,7 @@ def step(world: "World") -> None:
     can_grow  = water_ok_growth & temp_ok_growth & timer_ok & (veg < veg_max) & altitude_ok
 
     # Lichens : sol OU mist suffisant - ajout de nutriment aussi pour les lichens, moins exigeants que les autres
-    lichen_growth = can_grow & (veg == VEG_NONE) & (water_ok_growth | mist_ok) & nut_ok
+    lichen_growth = can_grow & nut_ok &(veg == VEG_NONE) & (water_ok_growth | mist_ok) & nut_ok
 
     # Grass : sol ET (eau OU mist) — plus exigeant
     normal_growth = can_grow & (veg > VEG_NONE) & nut_ok & (
