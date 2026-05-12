@@ -58,6 +58,7 @@ ZOOM_MAX          = 32
 ZOOM_DEFAULT      = 2
 INFO_FONT_SIZE    = 14
 INSPECT_FONT_SIZE = 13
+_AA_SAMPLES       = 4   # set from config["rendering"]["aa_samples"] at Renderer init
 
 SPEED_STEPS   = [0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 SPEED_DEFAULT = 6
@@ -302,7 +303,7 @@ def _build_mist_surface(world, vw, vh, cx, cy, zoom):
     a = pygame.surfarray.pixels_alpha(surf)
     a[:, :] = alpha.T
     del a
-    return (pygame.transform.scale(surf, ((x1 - x0) * zoom, (y1 - y0) * zoom)),
+    return (_aa_scale(surf, (x1 - x0) * zoom, (y1 - y0) * zoom, zoom),
             -int((cx - x0) * zoom), -int((cy - y0) * zoom))
 
 
@@ -348,7 +349,7 @@ def _draw_l2_veg(surface, world, cam_x, cam_y, zoom, vw, vh, is_flooded):
             px3d[mask] = varied[mask]
             pa[mask]   = alpha
         del px3d, pa
-        scaled = pygame.transform.scale(surf, ((x1 - x0) * zoom, (y1 - y0) * zoom))
+        scaled = _aa_scale(surf, (x1 - x0) * zoom, (y1 - y0) * zoom, zoom)
         surface.blit(scaled, (-int((cam_x - x0) * zoom), -int((cam_y - y0) * zoom)))
 
     else:
@@ -399,7 +400,7 @@ def _draw_l2_nutrients(surface, world, cam_x, cam_y, zoom, vw, vh, is_flooded):
         px3d[:] = np.array(COLOR_L2_NUTR, dtype=np.uint8)
         pa[:, :] = (crop_nutr.T * 200).astype(np.uint8)
         del px3d, pa
-        scaled = pygame.transform.scale(surf, ((x1 - x0) * zoom, (y1 - y0) * zoom))
+        scaled = _aa_scale(surf, (x1 - x0) * zoom, (y1 - y0) * zoom, zoom)
         surface.blit(scaled, (-int((cam_x - x0) * zoom), -int((cam_y - y0) * zoom)))
 
     else:
@@ -618,6 +619,11 @@ def _draw_inspect(surface, world, mx, my, cam_x, cam_y, zoom, font, is_flooded):
 # Helper crop + scale
 # ---------------------------------------------------------------------------
 
+def _aa_scale(surf, w, h, zoom):
+    if zoom > 1 and _AA_SAMPLES >= 4:
+        return pygame.transform.smoothscale(surf, (w, h))
+    return pygame.transform.scale(surf, (w, h))
+
 def _crop_and_scale(rgb, cam_x, cam_y, zoom, vw, vh, ww, wh):
     x0 = int(cam_x); y0 = int(cam_y)
     x1 = min(x0 + (-(-vw // zoom) + 1), ww)
@@ -626,7 +632,7 @@ def _crop_and_scale(rgb, cam_x, cam_y, zoom, vw, vh, ww, wh):
     if crop.size == 0:
         return None, 0, 0
     surf   = pygame.surfarray.make_surface(crop.transpose(1, 0, 2))
-    scaled = pygame.transform.scale(surf, ((x1 - x0) * zoom, (y1 - y0) * zoom))
+    scaled = _aa_scale(surf, (x1 - x0) * zoom, (y1 - y0) * zoom, zoom)
     return scaled, -int((cam_x - x0) * zoom), -int((cam_y - y0) * zoom)
 
 
@@ -636,8 +642,10 @@ def _crop_and_scale(rgb, cam_x, cam_y, zoom, vw, vh, ww, wh):
 
 class Renderer:
     def __init__(self, world: World):
+        global _AA_SAMPLES
+        _AA_SAMPLES = world.config.get("rendering", {}).get("aa_samples", 4)
         self.state        = RendererState()
-        self._hillshade_L = _build_hillshade(world.surface_altitude(), world.front.ground_snow) 
+        self._hillshade_L = _build_hillshade(world.surface_altitude(), world.front.ground_snow)
         self._font        = None
         self._ifont       = None
 
@@ -695,7 +703,7 @@ class Renderer:
             alpha_arr = pygame.surfarray.pixels_alpha(surf)
             alpha_arr[:, :] = tile.T
             del alpha_arr
-            scaled = pygame.transform.scale(surf, ((x1 - x0) * s.zoom, (y1 - y0) * s.zoom))
+            scaled = _aa_scale(surf, (x1 - x0) * s.zoom, (y1 - y0) * s.zoom, s.zoom)
             ox = -int((s.cam_x - x0) * s.zoom)
             oy = -int((s.cam_y - y0) * s.zoom)
             screen.blit(scaled, (ox, oy))

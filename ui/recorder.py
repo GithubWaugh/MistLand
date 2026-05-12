@@ -26,15 +26,20 @@ class VideoRecorder:
         self._quality   = _QUALITY_MAP.get(str(out.get("quality", "high")), 9)
         self._frames: list[np.ndarray] = []
         self.paused     = True
+        self._call_count = 0
 
     def toggle_pause(self) -> None:
         self.paused = not self.paused
 
     def reset(self) -> None:
         self._frames.clear()
+        self._call_count = 0
 
-    def add_frame(self, surface: pygame.Surface, tick: int) -> None:
-        if self.paused or tick % self.frame_step != 0:
+    def add_frame(self, surface: pygame.Surface) -> None:
+        if self.paused:
+            return
+        self._call_count += 1
+        if self._call_count % self.frame_step != 0:
             return
         arr = pygame.surfarray.array3d(surface)              # (W, H, 3) uint8
         self._frames.append(arr.transpose(1, 0, 2).copy())  # (H, W, 3)

@@ -188,7 +188,7 @@ class MainWindow:
             if "toggle_rec" in actions and self.recorder:
                 self.recorder.toggle_pause()
                 state.rec_paused = self.recorder.paused
-                if state.rec_paused and self.recorder.frame_count > 0:
+        if state.rec_paused and self.recorder.frame_count > 0:
                     self._finalize_recording(self.world)
                     self.recorder.reset()
 
@@ -197,7 +197,7 @@ class MainWindow:
 
         # Capture frame after render (uses the fully composited screen)
         if self.recorder:
-            self.recorder.add_frame(self.screen, self.world.tick_count)
+            self.recorder.add_frame(self.screen)
 
         # HUD overlay drawn after capture — never appears in the recording
         if self.renderer:
@@ -221,6 +221,8 @@ class MainWindow:
             self.config   = world.config
             self.renderer = Renderer(world)
             self.renderer.init_fonts()
+            if self.recorder:
+                self.renderer.state.rec_paused = self.recorder.paused
             self._tick_accum = 0.0
 
         from ui.dialogs import load_dialog
@@ -234,6 +236,8 @@ class MainWindow:
             self.world    = world
             self.renderer = Renderer(world)
             self.renderer.init_fonts()
+            if self.recorder:
+                self.renderer.state.rec_paused = self.recorder.paused
             self._tick_accum = 0.0
 
         from ui.dialogs import new_sim_dialog
@@ -248,6 +252,8 @@ class MainWindow:
         help_dialog(self.root)
 
     def _on_quit(self) -> None:
+        if self.recorder and not self.recorder.paused and self.recorder.frame_count > 0:
+            self._finalize_recording(self.world)
         pygame.quit()
         self.root.destroy()
 

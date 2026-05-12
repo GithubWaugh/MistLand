@@ -1,6 +1,11 @@
 {
   "_comment": "MistLand — default simulation parameters. Keys prefixed with '_comment' are ignored by the simulation.",
 
+  "rendering": {
+    "aa_samples": 4,
+    "_comment_aa_samples": "Antialiasing quality when zoom > 1. 1 = nearest-neighbour (off), 4 = bilinear (on)."
+  },
+
   "output": {
     "frame_rate": 24,
     "frame_step": 2,
