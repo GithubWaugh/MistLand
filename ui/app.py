@@ -19,6 +19,7 @@ Contrôles :
 """
 
 import math
+import time
 import pygame
 import numpy as np
 from dataclasses import dataclass
@@ -133,7 +134,8 @@ class RendererState:
     pan_start_my: int   = 0
     pan_start_cx: float = 0.0
     pan_start_cy: float = 0.0
-    rec_paused  : bool  = False
+    rec_paused       : bool = False
+    zoom_locked_until: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -748,6 +750,23 @@ class Renderer:
                     (8, sh - INFO_BAR_H + 4))
         pygame.display.flip()
 
+    def draw_hud_overlay(self, screen: pygame.Surface) -> None:
+        if self._font is None or time.perf_counter() >= self.state.zoom_locked_until:
+            return
+        msg = "Recording active — zoom & resize locked"
+        text_surf = self._font.render(msg, True, (255, 220, 80))
+        tw, th = text_surf.get_size()
+        sw, sh = screen.get_size()
+        pad = 12
+        box_w, box_h = tw + pad * 2, th + pad * 2
+        bx = (sw - box_w) // 2
+        by = (sh - INFO_BAR_H - box_h) // 2
+        box = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+        box.fill((30, 30, 30, 210))
+        screen.blit(box, (bx, by))
+        screen.blit(text_surf, (bx + pad, by + pad))
+        pygame.display.flip()
+
     def handle_event(self, event, world, screen_size) -> set:
         actions = set(); s = self.state
         if event.type == pygame.QUIT:
@@ -784,11 +803,14 @@ class Renderer:
             elif k == pygame.K_r:
                 actions.add('toggle_rec')
         elif event.type == pygame.MOUSEWHEEL:
-            mx, my = pygame.mouse.get_pos()
-            wx = s.cam_x + mx / s.zoom; wy = s.cam_y + my / s.zoom
-            s.zoom  = max(ZOOM_MIN, min(ZOOM_MAX, s.zoom + event.y))
-            s.cam_x = wx - mx / s.zoom; s.cam_y = wy - my / s.zoom
-            self.clamp_camera(screen_size, world)
+            if s.rec_paused:
+                mx, my = pygame.mouse.get_pos()
+                wx = s.cam_x + mx / s.zoom; wy = s.cam_y + my / s.zoom
+                s.zoom  = max(ZOOM_MIN, min(ZOOM_MAX, s.zoom + event.y))
+                s.cam_x = wx - mx / s.zoom; s.cam_y = wy - my / s.zoom
+                self.clamp_camera(screen_size, world)
+            else:
+                s.zoom_locked_until = time.perf_counter() + 3.0
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button in (2, 3):
                 s.panning = True
@@ -805,5 +827,8 @@ class Renderer:
                 s.cam_y = s.pan_start_cy - dy
                 self.clamp_camera(screen_size, world)
         elif event.type == pygame.VIDEORESIZE:
-            self.clamp_camera(screen_size, world)
+            if s.rec_paused:
+                self.clamp_camera(screen_size, world)
+            else:
+                s.zoom_locked_until = time.perf_counter() + 3.0
         return actions

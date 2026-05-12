@@ -11,7 +11,6 @@ import os
 import shutil
 import time
 import tkinter as tk
-from tkinter import filedialog, messagebox
 
 import pygame
 
@@ -139,6 +138,7 @@ class MainWindow:
         self.renderer = Renderer(world)
         self.renderer.init_fonts()
         self.recorder = VideoRecorder(self.config)
+        self.renderer.state.rec_paused = self.recorder.paused
         self._last_time  = time.perf_counter()
         self._tick_accum = 0.0
         self.root.after(16, self._loop)
@@ -188,6 +188,9 @@ class MainWindow:
             if "toggle_rec" in actions and self.recorder:
                 self.recorder.toggle_pause()
                 state.rec_paused = self.recorder.paused
+                if state.rec_paused and self.recorder.frame_count > 0:
+                    self._finalize_recording(self.world)
+                    self.recorder.reset()
 
         # Render
         self.renderer.render(self.screen, self.world)
@@ -195,6 +198,10 @@ class MainWindow:
         # Capture frame after render (uses the fully composited screen)
         if self.recorder:
             self.recorder.add_frame(self.screen, self.world.tick_count)
+
+        # HUD overlay drawn after capture — never appears in the recording
+        if self.renderer:
+            self.renderer.draw_hud_overlay(self.screen)
 
         self.root.after(16, self._loop)
 
@@ -241,31 +248,28 @@ class MainWindow:
         help_dialog(self.root)
 
     def _on_quit(self) -> None:
-        if self.recorder and self.recorder.frame_count > 0:
-            self._finalize_recording()
         pygame.quit()
         self.root.destroy()
 
-    def _finalize_recording(self) -> None:
-        dlg = tk.Toplevel(self.root)
-        dlg.title("MistLand")
-        dlg.resizable(False, False)
-        tk.Label(dlg, text="Encodage en cours...", padx=30, pady=20,
-                 font=("TkDefaultFont", 12)).pack()
-        dlg.update()
+    def _finalize_recording(self, world: World) -> None:
+        from datetime import datetime
+        assert self.recorder is not None
 
-        tmp_path = self.recorder.encode()
-        dlg.destroy()
+        out_cfg  = self.config.get("output", {})
+        save_dir = out_cfg.get("video_save_dir", "").strip()
+        if not save_dir:
+            save_dir = os.path.join(os.path.expanduser("~"), "Documents", "Mist_saved_files")
+        os.makedirs(save_dir, exist_ok=True)
 
-        if tmp_path is None:
-            return
-        dest = filedialog.asksaveasfilename(
-            parent=self.root,
-            defaultextension=".mp4",
-            filetypes=[("Vidéo MP4", "*.mp4"), ("Tous les fichiers", "*.*")],
-            title="Enregistrer la vidéo",
-        )
-        if dest:
-            shutil.move(tmp_path, dest)
-        else:
-            os.remove(tmp_path)
+        seed     = world.config["world"].get("seed", 0)
+        now      = datetime.now()
+        filename = f"Mistvid_{seed}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
+        dest     = os.path.join(save_dir, filename)
+
+        try:
+            tmp_path = self.recorder.encode()
+            if tmp_path:
+                shutil.move(tmp_path, dest)
+                print(f"Video saved: {dest}")
+        except Exception as e:
+            print(f"Encoding error: {e}")

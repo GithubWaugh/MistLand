@@ -2,7 +2,7 @@
 recorder.py
 Captures pygame frames and encodes them to MP4 using imageio + imageio-ffmpeg.
 
-Recording is active by default on startup.
+Recording is inactive by default on startup.
 R key toggles pause / resume — frames already buffered are kept, new ones
 are appended after resume, so the final video is one continuous sequence.
 On quit, encode() must be called explicitly.
@@ -29,6 +29,9 @@ class VideoRecorder:
 
     def toggle_pause(self) -> None:
         self.paused = not self.paused
+
+    def reset(self) -> None:
+        self._frames.clear()
 
     def add_frame(self, surface: pygame.Surface, tick: int) -> None:
         if self.paused or tick % self.frame_step != 0:

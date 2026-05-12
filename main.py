@@ -19,6 +19,7 @@ def load_config(path: str) -> dict:
         return json.load(f)
 
 
+
 def main():
     print("=== MistLand ===")
     config = load_config(CONFIG_PATH)
