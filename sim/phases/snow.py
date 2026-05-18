@@ -27,8 +27,15 @@ def step(world: "World") -> None:
     f = world.front
     b = world.back
 
+    # Felt temperature due to altitude
+    atmos_cfg   = world.config["atmosphere"]
+    lapse_rate = atmos_cfg.get("lapse_rate", 0.0)
+    felt_temp = lapse_rate * np.maximum(world.surface_altitude(),0.5).astype(np.float32)  # Higher altitudes are cooler, but only count altitudes above a small threshold to prevent excessive cooling in flooded areas
+   
+
+
     # --- Snow accumulation ---
-    can_snow = (b.atmo_temp < snow_temp_threshold) & (b.mist >= 0.01)
+    can_snow = (b.atmo_temp - felt_temp < snow_temp_threshold ) & (b.mist >= mist_to_snow_rate)
     snow_accumulation = np.where(can_snow, np.minimum(b.mist, mist_to_snow_rate), 0.0)
     snow_accumulation *= (1-b.ground_snow)  # Limit snow accumulation if there's already a lot of snow (max 1.0)
     b.mist -= snow_accumulation

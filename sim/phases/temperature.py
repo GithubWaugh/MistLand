@@ -47,9 +47,10 @@ _NEIGHBOURS = [
 
 def step(world: "World") -> None:
     world_cfg   = world.config["world"]
-    temp_cfg         = world.config["temperature"]
+    temp_cfg    = world.config["temperature"]
     atmos_cfg   = world.config["atmosphere"]
     base_cfg    = world.config["base_types"]
+    veg_cfg     = world.config["plants"]
 
     # Single exchange rate for ground ↔ atmosphere
     # Derived from the average of the two former rates
@@ -103,6 +104,14 @@ def step(world: "World") -> None:
     artificial_boost = 1.0  # Boost factor to make the sun's effect more visible in the simulation 
     sun_factor *= solar_input * artificial_boost * (1-albedo)  # Higher solar input has a stronger effect, but is modulated by albedo (reflectivity). Bare ground absorbs more energy, while snow-covered areas reflect most of it.
 
+    # Vegetation reduces Albedo
+    veg_albedo_red = np.empty((world.height, world.width), dtype=np.float32)
+    veg_albedo_red[world.front.vegetation == 1] = veg_cfg["lichens"]["albedo_reduction"]
+    veg_albedo_red[world.front.vegetation == 2] = veg_cfg["shrubs"]["albedo_reduction"]
+    veg_albedo_red[world.front.vegetation == 3] = veg_cfg["trees"]["albedo_reduction"]
+    albedo = np.minimum(0, albedo - veg_albedo_red)
+
+
     # Felt temperature includes mist cooling effect
     mist_cooling_factor = atmos_cfg.get("mist_cooling_factor", 0.0)
     sun_factor -= mist_cooling_factor * world.front.mist.astype(np.float32)/7  # Mist cools the atmosphere by absorbing heat, proportional to mist density and cooling factor
@@ -111,8 +120,8 @@ def step(world: "World") -> None:
     b.ground_temp = (f.ground_temp + net_neighbour - net_flux).astype(np.float32)
     b.ground_temp += sun_factor  # Add solar energy input to ground temperature 
     # Felt temperature include altitude cooling effect (lapse rate)
-    lapse_rate = atmos_cfg.get("lapse_rate", 0.0)
-    f.atmo_temp -= lapse_rate * np.maximum(world.surface_altitude(),0.5).astype(np.float32)  # Higher altitudes are cooler, but only count altitudes above a small threshold to prevent excessive cooling in flooded areas
+    #lapse_rate = atmos_cfg.get("lapse_rate", 0.0)
+    #f.atmo_temp -= lapse_rate * np.maximum(world.surface_altitude(),0.5).astype(np.float32)  # Higher altitudes are cooler, but only count altitudes above a small threshold to prevent excessive cooling in flooded areas
     b.atmo_temp = (f.atmo_temp + net_flux).astype(np.float32)
     b.atmo_temp += sun_factor * 0.5  # Atmosphere also receives some solar energy, but less than the ground (adjust factor as needed)
 

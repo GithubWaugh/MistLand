@@ -8,7 +8,7 @@
 
   "output": {
     "frame_rate": 24,
-    "frame_step": 2,
+    "frame_step": 1,
     "quality": "high",
     "video_save_dir": ""
   },
@@ -23,9 +23,9 @@
     "_comment_total_water": "Total water per cell on average. 0.5 = half-saturated world. Increase for more oceans, decrease for a drier world.",
     "total_energy": 50000,
     "_comment_total_energy": "Reserved for future use (external energy exchange with sun/radiation).",
-    "solar_radiation": 0.1,
+    "solar_radiation": 0.2,
     "_comment_solar_radiation": "Base solar energy input per tick. Modulated by day/night cycle and albedo. Higher = more energy, higher temperatures, more evaporation.",
-    "sun_rotation_speed": 200,
+    "sun_rotation_speed": 365,
     "_comment_sun_rotation_speed": "Speed of the sun's rotation around the world. Higher = faster day/night cycle."
   },
 
@@ -54,7 +54,7 @@
       "thermal_inertia": 0.5,
       "water_retention": 0.15,
       "flooding_threshold": 0.7,
-      "albedo_base": 0.3
+      "albedo_base": 0.4
     }
   },
 
@@ -100,9 +100,9 @@
     "wind_viscosity": 0.25,
     "wind_damping": 0.95,
     "wind_max_speed": 3.0,
-    "wind_noise_strength": 0.0015,
+    "wind_noise_strength": 0.0025,
     "_comment_wind_noise_strength": "Amplitude of the noise perturbation added to wind each tick.",
-    "wind_noise_coarse_factor": 8,
+    "wind_noise_coarse_factor": 16,
     "_comment_wind_noise_coarse_factor": "Downscale factor for the coarse noise grid (W/factor × H/factor). Higher = larger, smoother eddies.",
     "wind_noise_persistence": 0.99,
     "_comment_wind_noise_persistence": "O-U persistence per tick [0..1]. 0.99 = significant change every ~100 ticks; 0.9 = every ~10 ticks.",
@@ -231,7 +231,7 @@
         "nutriments": 0.2
       },
       "growth_time": 20,
-      "albedo_reduction": 0.05
+      "albedo_reduction": 0.1
     },
     "shrubs": {
       "_comment": "Shrubs : higher growth requirements, on sand or soil, benefits from fertility, higher albedo reduction.",
@@ -247,7 +247,7 @@
         "nutriments": 0.4
       },
       "growth_time": 50,
-      "albedo_reduction": 0.1
+      "albedo_reduction": 0.2
     },
     "trees" : {
       "_comment": "Trees : highest growth requirements, only on soil, benefits most from fertility, highest albedo reduction.",
@@ -263,7 +263,7 @@
         "nutriments": 0.7
       },
       "growth_time": 100,
-      "albedo_reduction": 0.15
+      "albedo_reduction": 0.4
     }
   }
 }
