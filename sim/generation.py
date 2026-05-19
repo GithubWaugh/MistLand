@@ -36,6 +36,7 @@ def generate(world: World, seed: int = 42) -> None:
     _generate_base_type(world, seed)
     _generate_fertility(world, seed)
     _generate_veg_tick_counter(world, seed)
+    _generate_lake(world)  # must be after altitude and base type
     _distribute_water(world)
     _distribute_temperature(world)
     _update_albedo(world)
@@ -155,6 +156,10 @@ def _generate_fertility(world, seed):
 # ------------------------------------------------------------------
 # Water
 # ------------------------------------------------------------------
+
+def _generate_lake(world):
+    world.front.lake = np.zeros((world.height, world.width), dtype=bool)
+    # No lake at start, will be generated dynamically from flooding. This is just to initialise the buffer.
 
 def _distribute_water(world):
     total   = world.config["world"]["total_water"]

@@ -121,6 +121,7 @@ class RendererState:
     zoom        : int   = ZOOM_DEFAULT
     cam_x       : float = 0.0
     cam_y       : float = 0.0
+    antialiasing : bool  = True
     layer1_mode : int   = L1_SOIL
     layer2_mode : int   = L2_VEG
     layer3_mode : int   = L3_GRDW
@@ -143,37 +144,36 @@ class RendererState:
 # Hillshading
 # ---------------------------------------------------------------------------
 
-def _build_hillshade(altitude, snow: np.ndarray) -> np.ndarray:
-    dzdx = (np.roll(altitude, -1, axis=1) - np.roll(altitude,  1, axis=1)) * 0.5
-    dzdy = (np.roll(altitude, -1, axis=0) - np.roll(altitude,  1, axis=0)) * 0.5
+def _build_hillshade(lake,altitude, snow: np.ndarray) -> np.ndarray:
+    if ~lake.any() : # no lake cells, normal hillshade
+        dzdx = (np.roll(altitude, -1, axis=1) - np.roll(altitude,  1, axis=1)) * 0.5
+        dzdy = (np.roll(altitude, -1, axis=0) - np.roll(altitude,  1, axis=0)) * 0.5
 
-    norm_len = np.sqrt(dzdx ** 2 + dzdy ** 2 + 1.0)
-    nx = -dzdx / norm_len
-    ny = -dzdy / norm_len
-    nz =  1.0  / norm_len
+        norm_len = np.sqrt(dzdx ** 2 + dzdy ** 2 + 1.0)
+        nx = -dzdx / norm_len
+        ny = -dzdy / norm_len
+        nz =  1.0  / norm_len
 
-    inv_sqrt3 = 1.0 / math.sqrt(3.0)
-    shade = nx * (-inv_sqrt3) + ny * (-inv_sqrt3) + nz * inv_sqrt3
+        inv_sqrt3 = 1.0 / math.sqrt(3.0)
+        shade = nx * (-inv_sqrt3) + ny * (-inv_sqrt3) + nz * inv_sqrt3
 
-    # Snow effect : brighten areas with snow to make them visually distinct and more visible, especially when the base color is light (e.g., sand or bare)
-    # shade = np.where(snow >= 0.01, shade + 0.25, shade)
-    shade += snow * 0.25  # Additive brighten based on snow amount, more snow → brighter, without a hard threshold
+        # Normalisation : étire les valeurs réelles pour couvrir toute la plage
+        s_min, s_max = shade.min(), shade.max()
+        if s_max - s_min > 1e-6:
+            shade = (shade - s_min) / (s_max - s_min)
+        else:
+            shade = np.full_like(shade, 0.5)
 
-    # Normalisation : étire les valeurs réelles pour couvrir toute la plage
-    s_min, s_max = shade.min(), shade.max()
-    if s_max - s_min > 1e-6:
-        shade = (shade - s_min) / (s_max - s_min)
-    else:
-        shade = np.full_like(shade, 0.5)
+        # Plage de luminosité cible
+        LUM_MIN = 0.25
+        LUM_MAX = 0.75
+        shade = shade * (LUM_MAX - LUM_MIN) + LUM_MIN 
+        
+    else : # is Lake
+        shade = altitude * 0.5 + 0.25 # base luminosité from altitude (deeper = darker)
 
-    # Plage de luminosité cible
-    LUM_MIN = 0.5
-    LUM_MAX = 0.75
-    shade = shade * (LUM_MAX - LUM_MIN) + LUM_MIN 
-    
-    # Modulation par la neige : éclaircit les zones enneigées
-    shade = np.where(snow >= 0.01, shade + 0.25, shade)
-
+    # Modulation par la neige : éclaircit les zones enneigées (snow can exist on land and lake cells)
+    shade = np.where(snow >= 0.01, np.maximum(shade + 0.25, 1.0), shade)
     return shade.astype(np.float32)
 
 
@@ -645,7 +645,7 @@ class Renderer:
         global _AA_SAMPLES
         _AA_SAMPLES = world.config.get("rendering", {}).get("aa_samples", 4)
         self.state        = RendererState()
-        self._hillshade_L = _build_hillshade(world.surface_altitude(), world.front.ground_snow)
+        self._hillshade_L = _build_hillshade(world.front.lake, world.surface_altitude(), world.front.ground_snow)
         self._font        = None
         self._ifont       = None
 
@@ -667,7 +667,7 @@ class Renderer:
         vw, vh = sw, sh - INFO_BAR_H
         ww, wh = world.width, world.height
         is_flooded = _compute_flooded(world)
-        self._hillshade_L = _build_hillshade(world.surface_altitude(),world.front.ground_snow)   # recalculer à chaque frame pour prendre en compte la neige
+        self._hillshade_L = _build_hillshade(world.front.lake, world.surface_altitude(), world.front.ground_snow)   # recalculer à chaque frame pour prendre en compte la neige
 
         # --- Couche de base : hillshade + compositing L1 optionnel ---
         if s.layer1_mode == L1_NONE:
@@ -810,6 +810,15 @@ class Renderer:
                 s.show_inspect = not s.show_inspect
             elif k == pygame.K_r:
                 actions.add('toggle_rec')
+            elif k == pygame.K_l:
+                global _AA_SAMPLES
+                self.state.antialiasing = not self.state.antialiasing
+                if self.state.antialiasing:
+                    _AA_SAMPLES = world.config["rendering"].get('aa_samples', 4)
+                    print(f"Antialiasing enabled with {_AA_SAMPLES} samples.")
+                else:                    
+                    _AA_SAMPLES = 1
+                    print("Antialiasing disabled.")
         elif event.type == pygame.MOUSEWHEEL:
             if s.rec_paused:
                 mx, my = pygame.mouse.get_pos()

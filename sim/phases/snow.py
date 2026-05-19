@@ -30,7 +30,7 @@ def step(world: "World") -> None:
     # Felt temperature due to altitude
     atmos_cfg   = world.config["atmosphere"]
     lapse_rate = atmos_cfg.get("lapse_rate", 0.0)
-    felt_temp = lapse_rate * np.maximum(world.surface_altitude(),0.5).astype(np.float32)  # Higher altitudes are cooler, but only count altitudes above a small threshold to prevent excessive cooling in flooded areas
+    felt_temp = lapse_rate * (world.surface_altitude() + b.ground_snow)  # Higher altitudes are cooler, but only count altitudes above a small threshold to prevent excessive cooling in flooded areas
    
 
 
@@ -45,6 +45,6 @@ def step(world: "World") -> None:
     can_melt = (b.ground_temp > snow_melting_threshold) & (b.ground_snow >0.0)
     snow_meltable = np.where(can_melt, np.minimum(b.ground_snow, snow_melting_rate), 0.0)
     melting_multiplier = np.minimum(10, np.maximum(0, b.atmo_temp) / 10)  # Melt faster if atmosphere is warmer (up to 10x at 10°C or above)
-    melting_multiplier *= world.sun_exposition()  # Melt faster if sun exposition is higher (up to 1x at full sun, 0 at no sun)
+    melting_multiplier *= world.sun_exposition()**2  # Melt faster if sun exposition is higher (up to 1x at full sun, 0 at no sun)
     b.ground_snow -= snow_meltable * snow_melting_rate * melting_multiplier
     b.ground_water += snow_meltable * snow_melting_rate * melting_multiplier

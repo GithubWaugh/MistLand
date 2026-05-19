@@ -77,7 +77,7 @@ def step(world: "World") -> None:
     total_delta = np.add.reduce(deltas).astype(np.float32)
 
     # --- Water available for runoff (above retention minimum) ---
-    available = np.maximum(f.ground_water - retention, 0.0).astype(np.float32)
+    available = np.where(~f.lake, f.ground_water,np.maximum(f.ground_water - retention, 0.0).astype(np.float32))
 
     # Total outflow : only where downhill neighbours exist.
     # Cap to half the surface gap (in water units) so we never overshoot equilibrium.
@@ -105,17 +105,31 @@ def step(world: "World") -> None:
         water_to_neighbour = (outflow * fraction).astype(np.float32)
         new_ground_water  += np.roll(np.roll(water_to_neighbour, -dr, axis=0), -dc, axis=1)
 
+
+    # --- Flooding : cells above threshold are lakes ---
+    is_lake = world.get_flooded_mask()
+    # When a cell becomes newly flooded, apply an initial subsidence to create a lake basin and prevent immediate overspill.
+    newly_flooded = is_lake & ~world.front.lake
+    if newly_flooded.any():
+        # apply a small subsidence only where new lakes form
+        subsidence = (0.01 * newly_flooded.astype(np.float32))
+        world.altitude = np.maximum(world.altitude - subsidence, 0.0).astype(np.float32) # Initial subsidence to create a lake basin
+    # When a cell emerges from flooding, raise the terrain slightly to prevent it from immediately reflooding.
+    newly_emerged = ~is_lake & world.front.lake
+    if newly_emerged.any():
+        emergence_rise = (0.01 * newly_emerged.astype(np.float32))
+        world.altitude = (world.altitude + emergence_rise).astype(np.float32) # Raise terrain slightly to prevent immediate reflooding
+
     # Erode terrain under water flow : 0.1% of outflow volume, capped to 0.01 altitude units per tick
     erosion_rate = cfg.get("erosion_rate", 0.001)
-    erosion = np.minimum(outflow * erosion_rate, 0.01).astype(np.float32)
-    erosion /= world.front.vegetation + 1 # Vegetation reduces erosion by absorbing some of the water's energy
+    erosion = np.maximum(outflow * erosion_rate, 0).astype(np.float32)
+    erosion /= world.front.vegetation + 1 # Vegetation reduces erosion
+    erosion *= ~is_lake # No erosion in flooded cells (lakes) to prevent excessive deepening
+    erosion /= world.base_type + 1  # Rock doesn't erode, Sand erodes less than soil
     world.altitude = np.maximum(world.altitude - erosion, 0.0).astype(np.float32)
     
     # Clamp : no negative water quantity
     new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
-
-    # --- Flooding : cells above threshold are lakes ---
-    is_lake = world.get_flooded_mask()
 
     # Flooded snow melts into water, adding to the lake's ground water
     snow_melt = np.where(is_lake, f.ground_snow, 0.0).astype(np.float32)
@@ -151,7 +165,7 @@ def step(world: "World") -> None:
             0, 255
         ).astype(np.uint8)
 
-    """
+    
     # --- Ground water diffusion for non-lake cells ---
     # Non-lake cells spread 5% of their ground water equally to 8 neighbours.
     gw_diffusion_rate = cfg.get("ground_water_diffusion_rate", 0.05)
@@ -163,7 +177,7 @@ def step(world: "World") -> None:
         new_ground_water += np.roll(np.roll(diffuse_per_neighbour, -dr, axis=0), -dc, axis=1)
 
     new_ground_water = np.maximum(new_ground_water, 0.0).astype(np.float32)
-    """
+
 
     # Frozen grounds (tundra) : ground water turns to snow, ground water set to zero
     frozen = (f.ground_temp < 0.0) & ~is_lake
@@ -179,11 +193,28 @@ def step(world: "World") -> None:
             correction = -water_delta / lake_count
             new_ground_water = np.where(is_lake, new_ground_water + correction, new_ground_water).astype(np.float32)
 
-    # Apply a blur to smooth out the water surface of flooded cells (lakes)
-    from scipy.ndimage import gaussian_filter
-    blurred_water = gaussian_filter(new_ground_water, sigma=0.25, radius=1, mode='nearest')
-    new_ground_water = np.where(is_lake, blurred_water, new_ground_water).astype(np.float32)
+    # --- Lake surface leveling: damp oscillations within lake bodies ---
+    # Nudge each lake cell toward the local mean of its lake-only neighbours.
+    # Non-lake neighbours are excluded so no water leaks across the lake boundary.
+    # A rescale step enforces exact conservation of total lake water.
+    lake_smooth_rate = cfg.get("lake_smooth_rate", 0.4)
+    if is_lake.any() and lake_smooth_rate > 0.0:
+        gw_sum  = new_ground_water.copy()
+        n_count = np.ones_like(new_ground_water)
+        for dr, dc in _NEIGHBOURS:
+            nb_gw   = np.roll(np.roll(new_ground_water, dr, axis=0), dc, axis=1)
+            nb_lake = np.roll(np.roll(is_lake.astype(np.float32), dr, axis=0), dc, axis=1)
+            gw_sum  += nb_gw   * nb_lake
+            n_count += nb_lake
+        local_mean   = gw_sum / n_count
+        smoothed     = new_ground_water + lake_smooth_rate * (local_mean - new_ground_water)
+        total_before = float(new_ground_water[is_lake].sum())
+        new_ground_water = np.where(is_lake, smoothed, new_ground_water).astype(np.float32)
+        total_after  = float(new_ground_water[is_lake].sum())
+        if total_after > 1e-6:
+            new_ground_water[is_lake] *= total_before / total_after
 
     # --- Apply to back buffer ---
     b.ground_water = new_ground_water
     b.nutriments   = new_nutriments
+    b.lake         = is_lake

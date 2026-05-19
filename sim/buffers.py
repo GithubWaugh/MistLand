@@ -43,6 +43,7 @@ class WorldBuffers:
         shape = (self.height, self.width)
 
         self.ground_water       = _zeros(shape, np.float32)
+        self.lake               = _zeros(shape, np.bool_)  # Derived from ground_water > threshold, but useful to store as a separate boolean mask for efficiency
         self.ground_snow        = _zeros(shape, np.float32)
         self.nutriments         = _zeros(shape, np.uint8)
         self.ground_temp        = _zeros(shape, np.float32)
@@ -60,6 +61,7 @@ class WorldBuffers:
 
     def copy_from(self, other: "WorldBuffers") -> None:
         np.copyto(self.ground_water,        other.ground_water)
+        np.copyto(self.lake,                other.lake)
         np.copyto(self.nutriments,          other.nutriments)
         np.copyto(self.ground_temp,         other.ground_temp)
         np.copyto(self.ground_snow,         other.ground_snow)

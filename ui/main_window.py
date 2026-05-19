@@ -40,9 +40,6 @@ class MainWindow:
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_quit)
 
-        #self.root.bind("<Key>", self._on_key)
-        #self.embed.bind("<Key>", self._on_key)
-
         self._setup_pygame()
         self._setup_menu()
 
@@ -55,7 +52,7 @@ class MainWindow:
         keymap = {
             "space": pygame.K_SPACE,
             "a": pygame.K_a, "q": pygame.K_q, "i": pygame.K_i,
-            "m": pygame.K_m, "r": pygame.K_r,
+            "m": pygame.K_m, "r": pygame.K_r, "l": pygame.K_l,
             # Chiffres avec et sans shift (AZERTY)
             "1": pygame.K_1, "ampersand":    pygame.K_1,   # &
             "2": pygame.K_2, "eacute":       pygame.K_2,   # é

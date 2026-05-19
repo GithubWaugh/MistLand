@@ -30,7 +30,9 @@ def step(world: "World") -> None:
 
     # Cells where evaporation occurs
     can_evaporate = (f.ground_temp > temp_threshold) & (f.ground_water > 0.0)
+    evaporate_temp_adjust = can_evaporate * np.maximum(f.atmo_temp/50,0)
 
+    """
     # Flooded cells (ground_water >= type-specific threshold) evaporate only when temp exceeds water threshold
     bt_cfg = world.config["base_types"]
     flood_thresholds = np.array([
@@ -44,7 +46,14 @@ def step(world: "World") -> None:
     evaporated = np.where(
     can_evaporate,
     evap_rate * np.minimum(f.ground_water-cell_flood_threshold, 1.0),  # ← cap à 1.0
-    0.0 ).astype(np.float32)
+    0.0 ).astype(np.float32)*evaporate_temp_adjust
+    """ 
+    # Simple evaporation model: a fraction of available ground water evaporates, modulated by temperature.
+    evaporated = np.where(
+        can_evaporate,
+        evap_rate * np.minimum(f.ground_water, 0.5),  # Evaporate a fraction of available water
+        0.0
+    ).astype(np.float32) * evaporate_temp_adjust
 
     # Clamp to available water
     evaporated = np.minimum(evaporated, f.ground_water)
